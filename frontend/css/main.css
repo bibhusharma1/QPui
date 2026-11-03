@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import './tokens.css';
+@import './base.css';
+@import './layout.css';
+@import './components.css';
+@import './pages/dashboard.css';
+@import './pages/subjects.css';
+@import './pages/question-bank.css';
+@import './pages/pyqs.css';
+@import './pages/generate-paper.css';
+@import './pages/my-papers.css';
+@import './pages/teachers.css';
+@import './pages/profile.css';
+@import './pages/help.css';
+@import './responsive.css';

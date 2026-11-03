@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description"
+          content="Smart AI-Based Automated Question Paper Generator">
+
+    <meta name="theme-color" content="#2563eb">
+
+    <title>Smart QPG</title>
+
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles/glass.css">
+</head>
+
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<symbol id="icon-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></symbol>
+<symbol id="icon-subjects" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+<symbol id="icon-question" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+<symbol id="icon-pyq" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></symbol>
+<symbol id="icon-generate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.2L12 16.4 5.7 20.8 8 13.6 2 9.2h7.6z"/></symbol>
+<symbol id="icon-papers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
+<symbol id="icon-teachers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+                    <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+<symbol id="icon-profile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+<symbol id="icon-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+<symbol id="icon-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+<symbol id="icon-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+<symbol id="icon-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+<symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+<symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+<symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+<symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></symbol>
+<symbol id="icon-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5v6c0 1.7 2.7 3 6 3s6-1.3 6-3v-6"/></symbol>
+</svg>
+
+
+<!-- =========================================================
+     APPLICATION ROOT
+========================================================= -->
+<div id="app">
+
+    <!-- =====================================================
+         LOGIN PAGE
+    ====================================================== -->
+    <section id="loginPage" class="auth-page">
+
+        <div class="auth-container">
+
+            <div class="auth-brand">
+                <div class="brand-logo"><svg class="brand-mark" aria-hidden="true"><use href="#icon-logo"/></svg></div>
+
+                <h1>Smart QPG</h1>
+
+                <p>
+                    AI-assisted question paper generation
+                    for teachers and academic administrators.
+                </p>
+            </div>
+
+            <div class="auth-card">
+
+                <div class="auth-header">
+                    <h2>Welcome Back</h2>
+                    <p>Login to continue to your workspace</p>
+                </div>
+
+                <div id="loginMessage" class="form-message" role="alert"></div>
+
+                <form id="loginForm" novalidate>
+
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+
+                        <input
+                            type="email"
+                            id="loginEmail"
+                            placeholder="Enter your email"
+                            autocomplete="email"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+
+                        <div class="password-wrapper">
+                            <input
+                                type="password"
+                                id="loginPassword"
+                                placeholder="Enter your password"
+                                autocomplete="current-password"
+                                required
+                            >
+
+                            <button
+                                type="button"
+                                class="password-toggle"
+                                id="toggleLoginPassword">
+                                Show
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group hidden" id="loginTotpGroup">
+                        <label for="loginTotpCode">Authenticator Code (TOTP)</label>
+
+                        <div class="totp-field-wrapper">
+                            <svg class="totp-field-icon" aria-hidden="true"><use href="#icon-lock"/></svg>
+
+                            <input
+                                id="loginTotpCode"
+                                class="totp-code-input totp-login-code"
+                                type="text"
+                                inputmode="numeric"
+                                autocomplete="one-time-code"
+                                pattern="[0-9]{6}"
+                                maxlength="6"
+                                required
+                            >
+                        </div>
+
+                        <p id="totpCountdown" class="totp-countdown" role="timer">New code in 00:30</p>
+                        <p class="totp-hint">The code shown by your authenticator app stays valid until this interval ends; the server verifies it against its own clock.</p>
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary btn-full"
+                        id="loginButton">
+                        Login
+                    </button>
+
+                    <p id="loginCooldown" class="totp-cooldown hidden" role="status"></p>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         APPLICATION
+    ====================================================== -->
+    <div id="application" class="hidden">
+
+        <!-- SIDEBAR -->
+        <aside id="sidebar" class="sidebar">
+
+            <div class="sidebar-brand">
+
+                <div class="brand-logo small"><svg class="brand-mark" aria-hidden="true"><use href="#icon-logo"/></svg></div>
+
+                <div>
+                    <strong>Smart QPG</strong>
+                </div>
+
+            </div>
+
+            <div class="user-mini">
+
+                <div class="avatar" id="sidebarAvatar">
+                    T
+                </div>
+
+                <div>
+                    <strong id="sidebarUserName">
+                        Teacher
+                    </strong>
+
+                    <span id="sidebarUserRole">
+                        Teacher
+                    </span>
+                </div>
+
+            </div>
+
+            <!-- TEACHER NAVIGATION -->
+            <nav id="teacherNavigation" class="navigation hidden">
+
+                <a class="nav-item active" href="/dashboard"
+                        data-page="teacher-dashboard">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-dashboard"/></svg>
+                    Dashboard
+                </a>
+
+                <a class="nav-item" href="/subjects"
+                        data-page="teacher-subjects">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-subjects"/></svg>
+                    All Subjects
+                </a>
+
+
+                <a class="nav-item" href="/question-bank"
+                        data-page="teacher-questions">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-question"/></svg>
+                    Question Bank
+                </a>
+
+                <a class="nav-item" href="/pyqs"
+                        data-page="teacher-pyqs">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-pyq"/></svg>
+                    PYQs
+                </a>
+
+
+                <a class="nav-item" href="/generate-paper"
+                        data-page="teacher-generate">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
+                    Generate Question Paper
+                </a>
+
+                <a class="nav-item" href="/my-papers"
+                        data-page="teacher-papers">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-papers"/></svg>
+                    My Papers
+                </a>
+
+                <a class="nav-item" href="/teachers"
+                        data-page="admin-teachers"
+                        data-admin="true">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-shield"/></svg>
+                    Admin
+                    <em class="nav-tag">Admin</em>
+                </a>
+
+                <a class="nav-item" href="/profile"
+                        data-page="teacher-profile">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-profile"/></svg>
+                    Profile
+                </a>
+
+                <a class="nav-item" href="/help"
+                        data-page="teacher-help">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-question"/></svg>
+                    Help
+                </a>
+
+            </nav>
+
+
+            <!-- ADMIN NAVIGATION -->
+            <nav id="adminNavigation" class="navigation hidden">
+
+                <a class="nav-item active" href="/dashboard"
+                        data-page="admin-dashboard">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-dashboard"/></svg>
+                    Dashboard
+                </a>
+
+                <a class="nav-item" href="/teachers"
+                        data-page="admin-teachers">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-shield"/></svg>
+                    Admin
+                </a>
+
+                <a class="nav-item" href="/subjects"
+                        data-page="admin-subjects">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-subjects"/></svg>
+                    Subjects
+                </a>
+
+                <a class="nav-item" href="/question-bank"
+                        data-page="teacher-questions">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-question"/></svg>
+                    Question Bank
+                </a>
+
+                <a class="nav-item" href="/pyqs"
+                        data-page="teacher-pyqs">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-pyq"/></svg>
+                    PYQs
+                </a>
+
+                <a class="nav-item" href="/generate-paper"
+                        data-page="teacher-generate">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
+                    Generate Question Paper
+                </a>
+
+                <a class="nav-item" href="/my-papers"
+                        data-page="admin-papers">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-papers"/></svg>
+                    Question Papers
+                </a>
+
+                <a class="nav-item" href="/profile"
+                        data-page="admin-profile">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-profile"/></svg>
+                    Profile
+                </a>
+
+            </nav>
+
+            <button id="logoutButton" class="logout-button">
+                <svg class="nav-icon" aria-hidden="true"><use href="#icon-logout"/></svg>
+                Logout
+            </button>
+
+        </aside>
+
+
+        <!-- MAIN AREA -->
+        <main class="main-content">
+
+            <!-- TOP BAR -->
+            <header class="topbar">
+
+<button
+    id="mobileMenu"
+    class="mobile-menu"
+    type="button"
+    aria-label="Close sidebar"
+    title="Close sidebar"
+    aria-expanded="true"
+    aria-controls="sidebar">
+    <svg class="nav-icon" aria-hidden="true"><use href="#icon-menu"/></svg>
+</button>
+
+                <div>
+                    <h2 id="pageTitle">
+                        Dashboard
+                    </h2>
+
+                    <p id="pageSubtitle">
+                        Welcome to your academic workspace.
+                    </p>
+                </div>
+
+                <div class="topbar-right">
+
+                    <div class="topbar-user"
+                         id="topbarUserName">
+                        Teacher
+                    </div>
+
+                </div>
+
+            </header>
+
+
+            <!-- CONTENT -->
+            <div id="pageContent" class="page-content">
+
+                <!-- =============================================
+                     TEACHER DASHBOARD
+                ============================================== -->
+                <section
+                    id="teacher-dashboard"
+                    class="page-section">
+
+                    <div class="welcome-section">
+
+                        <div>
+                            <span class="eyebrow">
+                                TEACHER WORKSPACE
+                            </span>
+
+                            <h1>
+                                Welcome,
+                                <span id="teacherWelcomeName">
+                                    Teacher
+                                </span>
+                            </h1>
+
+                            <p>
+                                Manage your subjects, syllabus,
+                                question bank, previous-year questions
+                                and generate question papers.
+                            </p>
+                        </div>
+
+                        <button
+                            class="btn btn-primary"
+                            data-go="teacher-generate">
+                            ✦ Generate Question Paper
+                        </button>
+
+                    </div>
+
+
+                    <div class="stats-grid">
+
+                        <div class="stat-card">
+                            <div class="stat-icon">▣</div>
+
+                            <div>
+                                <span>Total Subjects</span>
+                                <strong id="statSubjects">—</strong>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">?</div>
+
+                            <div>
+                                <span>Question Bank</span>
+                                <strong id="statQuestions">—</strong>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">◫</div>
+
+                            <div>
+                                <span>PYQs Available</span>
+                                <strong id="statPYQ">—</strong>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">▧</div>
+
+                            <div>
+                                <span>Generated Papers</span>
+                                <strong id="statPapers">—</strong>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <p class="demo-note">Dashboard totals are unavailable because the backend does not provide a metrics endpoint.</p>
+
+
+                    <div class="section-header">
+                        <div>
+                            <h2>Quick Actions</h2>
+                            <p>Start your common academic tasks.</p>
+                        </div>
+                    </div>
+
+
+                    <div class="quick-grid">
+
+                        <button class="quick-card"
+                                data-go="teacher-questions">
+                            <span>❓</span>
+                            <strong>Upload Question Bank</strong>
+                            <small>
+                                Manage questions for your subjects.
+                            </small>
+                        </button>
+
+                        <button class="quick-card"
+                                data-go="teacher-pyqs"
+                                data-admin="true">
+                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-pyq"/></svg>
+                            <strong>Upload PYQ</strong>
+                            <small>
+                                Add previous-year question papers.
+                            </small>
+                        </button>
+
+                        <button class="quick-card primary"
+                                data-go="teacher-generate">
+                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
+                            <strong>Generate Question Paper</strong>
+                            <small>
+                                Create a new paper using AI assistance.
+                            </small>
+                        </button>
+
+                    </div>
+
+
+                    <div class="dashboard-columns">
+
+                        <div class="content-card">
+
+                            <div class="card-header">
+                                <div>
+                                    <h3>My Subjects</h3>
+                                    <p>Assigned academic subjects.</p>
+                                </div>
+
+                                <button
+                                    class="link-button"
+                                    data-go="teacher-subjects">
+                                    View All
+                                </button>
+                            </div>
+
+                            <div class="subject-list" id="dashSubjectList">
+
+                                <div class="subject-row">
+                                    <div>
+                                        <strong>Loading subjects…</strong>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="content-card">
+
+                            <div class="card-header">
+                                <div>
+                                    <h3>Recent Activity</h3>
+                                    <p>Your latest actions.</p>
+                                </div>
+                            </div>
+
+                            <div class="activity-list" id="activityList">
+
+                                <div class="empty-state">
+                                    <div class="empty-icon">◷</div>
+                                    <p>
+                                        Activity feed is unavailable because the backend has no activity endpoint.
+                                    </p>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     TEACHER SUBJECTS
+                ============================================== -->
+                <section
+                    id="teacher-subjects"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>My Subjects</h1>
+                            <p>
+                                Subjects registered in the system.
+                            </p>
+                        </div>
+                    </div>
+
+                    <form id="createSubjectForm" class="filter-bar">
+
+                        <input
+                            type="text"
+                            id="newSubjectName"
+                            placeholder="New subject name"
+                            required>
+
+                        <button
+                            type="submit"
+                            class="btn btn-primary">
+                            + Create Subject
+                        </button>
+
+                    </form>
+
+                    <div class="subject-card-grid" id="subjectGrid">
+
+                        <div class="large-subject-card">
+                            <h3>Loading subjects…</h3>
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     QUESTION BANK
+                ============================================== -->
+                <section
+                    id="teacher-questions"
+                    class="page-section hidden">
+
+                        <div class="section-header">
+
+                            <div>
+                                <h1>Question Bank</h1>
+                                <p>
+                                    Select subject and marks to view questions.
+                                </p>
+                            </div>
+
+                            <button type="button" class="btn btn-primary" id="addQuestionBankButton">
+                                + Add Question
+                            </button>
+
+                        </div>
+
+                        <div class="accuracy-notice" role="note">
+                            <span class="accuracy-notice-icon" aria-hidden="true">⚠</span>
+                            <div>
+                                <strong>Processing Accuracy Notice</strong>
+                                <p>
+                                    Review extracted questions before relying on them. OCR and question segmentation can produce errors, especially for scanned or complex PDFs.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="content-card">
+
+                            <div class="filter-bar">
+                                <select id="qbPyqSubject">
+                                    <option value="" disabled selected>Select subject</option>
+                                </select>
+
+                                <select id="qbMarksGroup">
+                                    <option value="" disabled selected>Select marks</option>
+                                </select>
+
+                                <label class="qb-sort-control" for="qbPrioritySort">
+                                    <svg class="qb-sort-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                                        <path d="M6 3v14m0 0-3-3m3 3 3-3M14 17V3m0 0-3 3m3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    <select id="qbPrioritySort" aria-label="Sort by">
+                                        <option value="default">Default order</option>
+                                        <option value="priority-desc">Priority: Highest first</option>
+                                        <option value="priority-asc">Priority: Lowest first</option>
+                                    </select>
+                                </label>
+
+                                <select id="qbPyqPageSize">
+                                    <option value="10">10 / page</option>
+                                    <option value="25" selected>25 / page</option>
+                                    <option value="50">50 / page</option>
+                                </select>
+                            </div>
+
+                            <p class="priority-legend">
+                                <span class="priority-legend-item"><span class="priority-dot priority-dot-1"></span> 1 Normal</span>
+                                <span class="priority-legend-item"><span class="priority-dot priority-dot-2"></span> 2 Important</span>
+                                <span class="priority-legend-item"><span class="priority-dot priority-dot-3"></span> 3 High priority</span>
+                            </p>
+
+                            <div class="qb-review-panel hidden" id="qbReviewPanel" aria-live="polite">
+                                <div class="qb-review-header">
+                                    <h3>Review Required</h3>
+                                    <p>Records the validation pipeline flagged need manual review before becoming usable questions.</p>
+                                </div>
+                                <div id="qbReviewList"></div>
+                            </div>
+
+                            <div class="table-container">
+
+                                <table class="data-table pyq-question-table qb-compact-table">
+
+                                    <thead>
+                                        <tr>
+                                            <th>Question</th>
+                                        </tr>
+                                    </thead>
+ 
+                                    <tbody id="pyqQuestionsTableBody">
+                                        <tr>
+                                            <td colspan="1" class="state-cell">
+                                                Select a subject and marks value to view questions.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+
+                        <div class="pagination-bar" id="pyqQuestionsPagination" style="display:none;">
+                            <button class="btn btn-secondary small" id="pyqQuestionsPrev">Previous</button>
+                            <span id="pyqQuestionsPageInfo">Page 1 of 1</span>
+                            <button class="btn btn-secondary small" id="pyqQuestionsNext">Next</button>
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     PYQs
+                ============================================== -->
+                <section
+                    id="teacher-pyqs"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Previous Year Questions</h1>
+
+                            <p>
+                                Upload, process and review historical
+                                question papers.
+                            </p>
+                        </div>
+
+                        <label class="btn btn-primary file-button">
+                            + Upload PDFs
+                            <input
+                                type="file"
+                                id="pyqUpload"
+                                multiple
+                                accept=".pdf,.docx,.png,.jpg,.jpeg">                        </label>
+
+                    </div>
+
+                    <div class="accuracy-notice" role="note">
+                        <svg class="accuracy-notice-icon" aria-hidden="true"><use href="#icon-alert"/></svg>
+                        <div>
+                            <strong>Processing Accuracy Notice</strong>
+                            <p>
+                                Review extracted questions before relying on them. OCR and question segmentation can produce errors, especially for scanned or complex PDFs.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="filter-bar">
+
+                        <select id="pyqSubject">
+                            <option value="">Select subject</option>
+                        </select>
+
+                        <input
+                            type="search"
+                            placeholder="Search PYQs..."
+                            id="pyqSearch">
+
+                        <select id="pyqStatusFilter" aria-label="Filter by processing status">
+                            <option value="">All Statuses</option>
+                            <option value="completed">Completed</option>
+                            <option value="processing">Processing</option>
+                            <option value="queued">Queued</option>
+                            <option value="failed">Failed</option>
+                            <option value="not_processed">Pending</option>
+                        </select>
+
+                    </div>
+
+
+                    <div class="content-card table-card">
+
+                        <table id="pyqTable" class="pyq-file-list">
+                            <thead class="visually-hidden">
+                                <tr><th scope="col">PDF and processing details</th></tr>
+                            </thead>
+                            <tbody id="pyqTableBody">
+
+                                <tr>
+                                    <td colspan="1" class="state-cell">
+                                        Select a subject to view its PDFs.
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+
+                </section>
+
+
+                <!-- =============================================
+                     GENERATE PAPER
+                ============================================== -->
+                <section
+                    id="teacher-generate"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Generate Question Paper</h1>
+
+                            <p>
+                                Configure and generate an AI-assisted
+                                examination paper.
+                            </p>
+                        </div>
+
+                    </div>
+
+
+                    <form id="generatePaperForm" novalidate>
+
+                        <div class="form-layout">
+
+                            <div class="content-card">
+
+                                <div class="card-header">
+                                    <div>
+                                        <h3>Basic Configuration</h3>
+                                        <p>
+                                            Select a saved configuration or define examination details.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="config-manager">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="configSelect">Saved configuration</label>
+                                            <select id="configSelect">
+                                                <option value="">Loading saved configurations…</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="configName">Configuration name</label>
+                                            <input type="text" id="configName" placeholder="Configuration name">
+                                        </div>
+                                    </div>
+                                    <div class="section-actions">
+                                        <button type="button" class="btn btn-secondary small" id="newConfigButton">New</button>
+                                        <button type="button" class="btn btn-primary small" id="saveConfigButton">Save</button>
+                                        <button type="button" class="btn btn-secondary small" id="duplicateConfigButton">Duplicate</button>
+                                        <button type="button" class="btn btn-secondary small" id="renameConfigButton">Rename</button>
+                                        <button type="button" class="btn btn-secondary small" id="setDefaultConfigButton">Set default</button>
+                                        <button type="button" class="btn btn-danger small" id="deleteConfigButton">Delete</button>
+                                        <span id="configStatus" class="distribution-total"></span>
+                                    </div>
+                                </div>
+
+                                <div class="form-grid">
+
+                                    <div class="form-group">
+                                        <label for="paperUniversity">University / Institution</label>
+                                        <input type="text" id="paperUniversity" placeholder="e.g. State University">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperCollege">College</label>
+                                        <input type="text" id="paperCollege" placeholder="e.g. Engineering College">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperDepartment">Department</label>
+                                        <input type="text" id="paperDepartment" placeholder="e.g. Computer Science">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperTitle">Paper Title</label>
+                                        <input type="text" id="paperTitle" required placeholder="e.g. Data Structures">
+                                        <span class="field-error" id="paperTitleError"></span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperAcademicYear">Academic Year</label>
+                                        <input type="text" id="paperAcademicYear" placeholder="e.g. 2025-26">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperSemester">Semester</label>
+                                        <input type="text" id="paperSemester" placeholder="e.g. 3rd Semester">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="examType">Examination Type</label>
+                                        <input type="text" id="examType" required placeholder="e.g. Mid-Semester">
+                                        <span class="field-error" id="examTypeError"></span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperSubject">Subject</label>
+                                        <select id="paperSubject" required>
+                                            <option value="">Select subject</option>
+                                        </select>
+                                        <span class="field-error" id="paperSubjectError"></span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperSubjectCode">Subject Code</label>
+                                        <input type="text" id="paperSubjectCode" placeholder="Subject code (optional)">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="paperExamDate">Examination Date (optional)</label>
+                                        <input type="date" id="paperExamDate">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="duration">Duration</label>
+                                        <input type="text" id="duration" value="3 Hours" required placeholder="e.g. 3 Hours">
+                                        <span class="field-error" id="durationError"></span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="totalMarks">Total Marks</label>
+                                        <input type="number" id="totalMarks" min="1" required>
+                                        <span class="field-error" id="totalMarksError"></span>
+                                    </div>
+
+                                    <div class="form-group form-group-full">
+                                        <label for="paperInstructions">General Examination Instructions</label>
+                                        <textarea id="paperInstructions" rows="3" placeholder="e.g. Answer all questions."></textarea>
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="content-card">
+
+                                <div class="card-header">
+                                    <div>
+                                        <h3>Blueprint and Sections</h3>
+                                        <p>
+                                            Select or save a reusable blueprint and edit sections. Section totals must equal total marks.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="blueprintSelect">Blueprint</label>
+                                        <select id="blueprintSelect">
+                                            <option value="">Default blueprint</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="blueprintName">Blueprint name</label>
+                                        <input type="text" id="blueprintName" placeholder="Blueprint name">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="blueprintDescription">Description</label>
+                                    <input type="text" id="blueprintDescription" placeholder="Optional description">
+                                </div>
+
+                                <div class="section-actions">
+                                    <button type="button" class="btn btn-secondary small" id="newBlueprintButton">New</button>
+                                    <button type="button" class="btn btn-secondary small" id="duplicateBlueprintButton">Duplicate</button>
+                                    <button type="button" class="btn btn-secondary small" id="renameBlueprintButton">Rename</button>
+                                    <button type="button" class="btn btn-danger small" id="deleteBlueprintButton">Delete</button>
+                                    <button type="button" class="btn btn-primary small" id="saveBlueprintButton">Save</button>
+                                    <span id="blueprintStatus" class="distribution-total"></span>
+                                </div>
+
+                                <div class="table-container section-editor">
+                                    <table class="data-table">
+                                        <colgroup>
+                                            <col class="col-section">
+                                            <col class="col-questions">
+                                            <col class="col-marks">
+                                            <col class="col-total">
+                                            <col class="col-actions">
+                                        </colgroup>
+                                        <thead>
+                                            <tr>
+                                                <th>Section</th>
+                                                <th>Questions</th>
+                                                <th>Marks each</th>
+                                                <th>Section total</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="sectionTableBody"></tbody>
+                                    </table>
+                                </div>
+
+                                <datalist id="marksOptions"></datalist>
+
+                                <div class="section-actions">
+                                    <button type="button" class="btn btn-secondary small" id="addSectionButton">
+                                        + Add Section
+                                    </button>
+                                    <span id="sectionTotalMessage" class="distribution-total"></span>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="generation-summary content-card">
+
+                            <div>
+                                <span>GENERATION SUMMARY</span>
+
+                                <h3 id="summaryTitle">
+                                    Question Paper
+                                </h3>
+
+                                <p id="summaryDetails">
+                                    Configure the form to generate.
+                                </p>
+                            </div>
+
+                            <button
+                                type="submit"
+                                class="btn btn-primary btn-large">
+                                ✦ Generate Question Paper
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                    <p id="processingAccuracyNotice" class="distribution-total"></p>
+
+                    <div
+                        id="generationResult"
+                        class="content-card hidden">
+
+                        <div class="success-header">
+                            <div class="success-icon">✓</div>
+
+                            <div>
+                                <h3>
+                                    Question Paper Draft Generated
+                                </h3>
+
+                                <p>
+                                    Review and edit the draft before exporting it as DOCX.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="paper-preview">
+                            <div class="paper-heading">
+                                <strong id="previewTitle">
+                                    Question Paper
+                                </strong>
+
+                                <span id="previewExamType">
+                                    Mid-Semester Examination
+                                </span>
+
+                                <span id="previewSubject">
+                                    Subject
+                                </span>
+                            </div>
+
+                            <div class="paper-meta">
+                                <span id="previewDuration">
+                                    Duration: 3 Hours
+                                </span>
+
+                                <span id="previewMarks">
+                                    Maximum Marks: 0
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="draft-validation" id="draftValidationMessage"></div>
+
+                        <div class="table-container draft-review-container">
+                            <table class="data-table draft-review-table">
+                                <colgroup>
+                                    <col class="dr-col-number">
+                                    <col class="dr-col-text">
+                                    <col class="dr-col-marks">
+                                    <col class="dr-col-figure">
+                                    <col class="dr-col-actions">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Question text</th>
+                                        <th>Marks</th>
+                                        <th>Figure</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="draftReviewTableBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="section-actions">
+                            <button type="button" class="btn btn-secondary small" id="addDraftQuestionButton">
+                                + Add Question
+                            </button>
+                            <button type="button" class="btn btn-primary small" id="exportDocxButton">
+                                Download DOCX
+                            </button>
+                            <span id="draftStatus" class="distribution-total"></span>
+                        </div>
+
+                    </div>
+
+                    <div id="addQuestionModal" class="modal hidden">
+                        <div class="modal-card">
+                            <div class="card-header">
+                                <div>
+                                    <h3>Add Question from Question Bank</h3>
+                                    <p>Search eligible questions for the selected subject.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary small" id="closeAddQuestionModal">Close</button>
+                            </div>
+                            <input type="search" id="addQuestionSearch" placeholder="Search question text">
+                            <div class="table-container section-editor">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Question</th>
+                                            <th>Marks</th>
+                                            <th>Source</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="addQuestionTableBody"></tbody>
+                                </table>
+                            </div>
+                     </div>
+                     </div>
+
+                 </section>
+
+
+                <!-- =============================================
+                     MY PAPERS
+                ============================================== -->
+                <section
+                    id="teacher-papers"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>My Papers</h1>
+
+                            <p>
+                                View and manage generated question papers.
+                            </p>
+                        </div>
+
+                        <button
+                            class="btn btn-primary"
+                            data-go="teacher-generate">
+                            + Generate Paper
+                        </button>
+
+                    </div>
+
+                    <div class="content-card table-card">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Paper</th>
+                                    <th>Subject</th>
+                                    <th>Exam type</th>
+                                    <th>Marks</th>
+                                    <th>Date</th>
+                                    <th>Duration</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="papersTableBody">
+
+                                <tr>
+                                    <td colspan="7" class="state-cell">
+                                        Loading question papers…
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                        <div id="papersPagination" class="pagination-bar" aria-live="polite">
+                            <button type="button" class="btn btn-secondary small" id="papersPrev">Previous</button>
+                            <span id="papersPageInfo">—</span>
+                            <button type="button" class="btn btn-secondary small" id="papersNext">Next</button>
+                        </div>
+
+                    </div>
+
+                    <div class="content-card">
+
+                        <div class="card-header">
+                            <div>
+                                <h3>Draft listing</h3>
+                                <p>
+                                    Drafts can be created and exported, but the backend does not provide a listing endpoint.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div id="draftPapersList"></div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     TEACHER PROFILE
+                ============================================== -->
+                <section
+                    id="teacher-profile"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+                        <div>
+                            <h1>My Profile</h1>
+                            <p>View your teacher information.</p>
+                        </div>
+                    </div>
+
+                    <div class="content-card profile-card">
+
+                        <div class="profile-avatar"
+                             id="profileAvatar">
+                            T
+                        </div>
+
+                        <div class="profile-details">
+
+                            <h2 id="profileName">
+                                Teacher
+                            </h2>
+
+                            <p id="profileEmail">
+                                —
+                            </p>
+
+                            <div class="profile-grid">
+
+                                <div>
+                                    <span>Role</span>
+                                    <strong id="profileRole">—</strong>
+                                </div>
+
+                                <div>
+                                    <span>Department</span>
+                                    <strong id="profileDepartment">—</strong>
+                                </div>
+
+                                <div>
+                                    <span>Status</span>
+                                    <strong id="profileStatus">—</strong>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <section class="content-card totp-settings" data-totp-settings>
+                        <h2>Authenticator app</h2>
+
+                        <div class="totp-toggle-row">
+                            <label class="totp-switch">
+                                <input type="checkbox" data-totp-toggle aria-label="Two-factor authentication" aria-describedby="totpToggleStateNote" disabled>
+                                <span class="totp-switch-slider" aria-hidden="true"></span>
+                                <span class="totp-switch-text">Two-factor authentication</span>
+                            </label>
+                            <span id="totpToggleStateNote" class="visually-hidden">State follows the authenticator status below.</span>
+                        </div>
+
+                        <p data-totp-status role="status">Checking authenticator status…</p>
+                        <div data-totp-enroll-panel class="hidden">
+                            <button type="button" class="btn btn-primary" data-totp-enroll>Set up authenticator</button>
+                            <div class="totp-enrollment hidden" data-totp-enrollment>
+                                <p>Scan this QR code with your authenticator app, then enter the current six-digit code to confirm setup.</p>
+                                <img class="totp-qr" data-totp-qr alt="Authenticator setup QR code" src="totp_qr.png">
+                                <form data-totp-confirm-form novalidate>
+                                    <label>Enter the current six-digit code
+                                        <input class="totp-code-input" data-totp-confirm-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                                    </label>
+                                    <button type="submit" class="btn btn-primary">Confirm setup</button>
+                                    <p class="form-message" data-totp-enroll-message role="alert" aria-live="polite"></p>
+                                </form>
+                                <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                            </div>
+                        </div>
+                        <div class="totp-pending hidden" data-totp-pending-panel>
+                            <p>Enrollment has started but is not active yet. Enter a current code from your authenticator app to finish enabling it.</p>
+                            <form data-totp-confirm-form novalidate>
+                                <label>Authenticator code
+                                    <input class="totp-code-input" data-totp-confirm-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                                </label>
+                                <button type="submit" class="btn btn-primary">Enable authenticator</button>
+                                <p class="form-message" data-totp-enroll-message role="alert" aria-live="polite"></p>
+                            </form>
+                            <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                        </div>
+                        <form class="totp-disable-form hidden" data-totp-disable-form novalidate>
+                            <label>Current authenticator code
+                                <input class="totp-code-input" data-totp-disable-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                            </label>
+                            <button type="submit" class="btn btn-secondary" data-totp-disable>Turn off authenticator</button>
+                            <p class="form-message" data-totp-disable-message role="alert" aria-live="polite"></p>
+                            <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                        </form>
+                        <p class="form-message" data-totp-settings-message role="alert" aria-live="polite"></p>
+                    </section>
+
+                </section>
+
+
+                <!-- =============================================
+                     HELP
+                ============================================== -->
+                <section
+                    id="teacher-help"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Help</h1>
+
+                            <p>
+                                Learn how to use the question paper
+                                generation system.
+                            </p>
+                        </div>
+
+                    </div>
+
+                    <div class="help-grid">
+
+                        <div class="content-card">
+                            <h3>How do I upload PYQs?</h3>
+
+                            <p>
+                                Open PYQs from the sidebar and upload PDF files.
+                                The backend processes PDFs and extracts
+                                questions for historical analysis.
+                            </p>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>How is weightage calculated?</h3>
+
+                            <p>
+                                Historical frequency, marks and recency
+                                can be used to calculate topic weightage.
+                            </p>
+                        </div>
+
+                        <div class="content-card">
+                            <h3>How do I generate a paper?</h3>
+
+                            <p>
+                                Open Generate Question Paper, select
+                                your subject and configure the paper
+                                structure before generating.
+                            </p>
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     ADMIN DASHBOARD
+                ============================================== -->
+                <section
+                    id="admin-dashboard"
+                    class="page-section hidden">
+
+                    <div class="welcome-section">
+
+                        <div>
+                            <span class="eyebrow">
+                                ADMINISTRATION
+                            </span>
+
+                            <h1>
+                                Welcome,
+                                <span id="adminWelcomeName">
+                                    Administrator
+                                </span>
+                            </h1>
+
+                            <p>
+                                Manage teachers and subjects.
+                            </p>
+                        </div>
+
+                    </div>
+
+                    <div class="stats-grid" id="adminStatsGrid">
+
+                        <div class="stat-card">
+                            <div>
+                                <span>Total Teachers</span>
+                                <strong id="statAdminTotalTeachers">—</strong>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div>
+                                <span>Total Subjects</span>
+                                <strong id="statAdminTotalSubjects">—</strong>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <p class="demo-note">Totals come from the teacher list (S11a) and subject list. Assignments and activity feeds are not implemented.</p>
+
+                    <div class="quick-grid">
+
+                        <button
+                            class="quick-card primary"
+                            data-go="teacher-generate">
+
+                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
+
+                            <strong>Generate Question Paper</strong>
+
+                            <small>
+                                Create a question paper from the available question bank.
+                            </small>
+
+                        </button>
+
+                        <button
+                            class="quick-card"
+                            data-go="admin-teachers">
+
+                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-shield"/></svg>
+
+                            <strong>Admin</strong>
+
+                            <small>
+                                Switch access mode, approve and manage teacher accounts.
+                            </small>
+
+                        </button>
+
+                        <button
+                            class="quick-card"
+                            data-go="admin-subjects">
+
+                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-subjects"/></svg>
+
+                            <strong>Manage Subjects</strong>
+
+                            <small>
+                                Add, edit and remove subjects.
+                            </small>
+
+                        </button>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     ADMIN TEACHERS
+                ============================================== -->
+                <section
+                     id="admin-teachers"
+                     class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Admin</h1>
+                            <p>
+                                Administrator access mode and teacher management.
+                            </p>
+                        </div>
+
+                        <button class="btn btn-primary" id="addTeacherButton">
+                            + Add Teacher
+                        </button>
+
+                    </div>
+
+                    <div class="access-mode-panel" aria-labelledby="accessModeHeading">
+
+                        <div class="access-mode-info">
+                            <h3 id="accessModeHeading">Access Mode</h3>
+                            <p>
+                                Read-only view lets you inspect subjects, the question bank, PYQs and papers without write actions.
+                                Edit Mode restores administrative create, edit and delete operations. The active mode is stored
+                                on the backend for your session.
+                            </p>
+                        </div>
+
+                        <div class="access-mode-controls">
+                            <span class="access-mode-status">Current mode:
+                                <strong id="accessModeStatus">Edit Mode</strong>
+                            </span>
+                            <div class="access-mode-buttons" role="radiogroup" aria-label="Access mode">
+                                <button
+                                    type="button"
+                                    class="btn access-mode-btn"
+                                    id="accessModeReadOnly"
+                                    role="radio"
+                                    aria-checked="false">
+                                    Read-only Mode
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn access-mode-btn"
+                                    id="accessModeEdit"
+                                    role="radio"
+                                    aria-checked="true">
+                                    Edit Mode
+                                </button>
+                            </div>
+                            <p class="access-mode-note hidden" id="accessModeNotice"></p>
+                        </div>
+
+                    </div>
+
+                    <div class="content-card" id="teacherManagementCard">
+                        <h3>Teacher Management</h3>
+                        <p class="access-mode-hint">
+                            Teacher records are managed from here. Approval, editing and removal follow the selected access mode.
+                        </p>
+
+                    <div class="filter-bar">
+
+                        <input
+                            type="search"
+                            placeholder="Search teachers..."
+                            id="teacherSearch">
+
+                        <select id="teacherStatusFilter">
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="disapproved">Disapproved</option>
+                        </select>
+
+                    </div>
+
+                    <div class="content-card table-card">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Teacher</th>
+                                    <th>Email</th>
+                                    <th>Department</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Subjects</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="teachersTableBody">
+
+                                <tr>
+                                    <td colspan="7" class="state-cell">
+                                        Loading teachers…
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                        <div id="teachersPagination" class="pagination-bar" aria-live="polite">
+                            <button type="button" class="btn btn-secondary small" id="teachersPrev">Previous</button>
+                            <span id="teachersPageInfo">—</span>
+                            <button type="button" class="btn btn-secondary small" id="teachersNext">Next</button>
+                        </div>
+
+                    </div>
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     ADMIN SUBJECTS
+                ============================================== -->
+                <section id="admin-subjects" class="page-section hidden">
+                    <div class="empty-state"><div class="empty-icon">▣</div><p>Subject management loads from the backend.</p></div>
+                </section>
+
+
+                <!-- =============================================
+                      ADMIN PAPERS
+                 ============================================== -->
+                <section
+                    id="admin-papers"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+ 
+                        <div>
+                            <h1>Question Papers</h1>
+ 
+                            <p>
+                                View papers generated by teachers.
+                            </p>
+                        </div>
+ 
+                    </div>
+
+                    <div class="content-card table-card">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Paper</th>
+                                    <th>Subject</th>
+                                    <th>Exam type</th>
+                                    <th>Marks</th>
+                                    <th>Date</th>
+                                    <th>Duration</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="adminPapersTableBody">
+
+                                <tr>
+                                    <td colspan="7" class="state-cell">
+                                        Loading question papers…
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                        <div id="adminPapersPagination" class="pagination-bar" aria-live="polite">
+                            <button type="button" class="btn btn-secondary small" id="adminPapersPrev">Previous</button>
+                            <span id="adminPapersPageInfo">—</span>
+                            <button type="button" class="btn btn-secondary small" id="adminPapersNext">Next</button>
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     ADMIN ACTIVITY
+                ============================================== -->
+                <section
+                    id="admin-activity"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Activity</h1>
+                            <p>Recent administrative activity.</p>
+                        </div>
+
+                    </div>
+
+                    <div class="content-card">
+
+                        <div class="activity-list">
+
+                            <div class="empty-state">
+                                <div class="empty-icon">◷</div>
+                                <p>
+                                    Activity feed is unavailable because the backend has no activity endpoint.
+                                </p>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+                <!-- =============================================
+                     ADMIN PROFILE
+                 ============================================== -->
+                <section
+                    id="admin-profile"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+                        <div>
+                            <h1>Admin Profile</h1>
+                            <p>Administrator information.</p>
+                        </div>
+                    </div>
+
+                    <div class="content-card profile-card">
+
+                        <div class="profile-avatar">
+                            A
+                        </div>
+
+                        <div class="profile-details">
+
+                            <h2 id="adminProfileName">
+                                Administrator
+                            </h2>
+
+                            <p id="adminProfileEmail">
+                                —
+                            </p>
+
+                            <div class="profile-grid">
+
+                                <div>
+                                    <span>Role</span>
+                                    <strong id="adminProfileRole">—</strong>
+                                </div>
+
+                                <div>
+                                    <span>Status</span>
+                                    <strong id="adminProfileStatus">—</strong>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <section class="content-card totp-settings" data-totp-settings>
+                        <h2>Authenticator app</h2>
+
+                        <div class="totp-toggle-row">
+                            <label class="totp-switch">
+                                <input type="checkbox" data-totp-toggle aria-label="Two-factor authentication" aria-describedby="totpToggleStateNoteAdmin" disabled>
+                                <span class="totp-switch-slider" aria-hidden="true"></span>
+                                <span class="totp-switch-text">Two-factor authentication</span>
+                            </label>
+                            <span id="totpToggleStateNoteAdmin" class="visually-hidden">State follows the authenticator status below.</span>
+                        </div>
+
+                        <p data-totp-status role="status">Checking authenticator status…</p>
+                        <div data-totp-enroll-panel class="hidden">
+                            <button type="button" class="btn btn-primary" data-totp-enroll>Set up authenticator</button>
+                            <div class="totp-enrollment hidden" data-totp-enrollment>
+                                <p>Scan this QR code with your authenticator app, then enter the current six-digit code to confirm setup.</p>
+                                <img class="totp-qr" data-totp-qr alt="Authenticator setup QR code" src="totp_qr.png">
+                                <form data-totp-confirm-form novalidate>
+                                    <label>Enter the current six-digit code
+                                        <input class="totp-code-input" data-totp-confirm-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                                    </label>
+                                    <button type="submit" class="btn btn-primary">Confirm setup</button>
+                                    <p class="form-message" data-totp-enroll-message role="alert" aria-live="polite"></p>
+                                </form>
+                                <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                            </div>
+                        </div>
+                        <div class="totp-pending hidden" data-totp-pending-panel>
+                            <p>Enrollment has started but is not active yet. Enter a current code from your authenticator app to finish enabling it.</p>
+                            <form data-totp-confirm-form novalidate>
+                                <label>Authenticator code
+                                    <input class="totp-code-input" data-totp-confirm-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                                </label>
+                                <button type="submit" class="btn btn-primary">Enable authenticator</button>
+                                <p class="form-message" data-totp-enroll-message role="alert" aria-live="polite"></p>
+                            </form>
+                            <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                        </div>
+                        <form class="totp-disable-form hidden" data-totp-disable-form novalidate>
+                            <label>Current authenticator code
+                                <input class="totp-code-input" data-totp-disable-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                            </label>
+                            <button type="submit" class="btn btn-secondary" data-totp-disable>Turn off authenticator</button>
+                            <p class="form-message" data-totp-disable-message role="alert" aria-live="polite"></p>
+                            <p class="totp-cooldown hidden" data-totp-cooldown role="status"></p>
+                        </form>
+                        <p class="form-message" data-totp-settings-message role="alert" aria-live="polite"></p>
+                    </section>
+
+                </section>
+
+            </div>
+
+        </main>
+
+    </div>
+
+</div>
+
+
+<!-- CONFIRM DIALOG -->
+<dialog id="confirmDialog" class="modal">
+
+    <h3 id="confirmTitle">Confirm</h3>
+
+    <p id="confirmMessage"></p>
+
+    <div class="modal-actions">
+
+        <button
+            type="button"
+            class="btn btn-secondary"
+            id="confirmCancel">
+            Cancel
+        </button>
+
+        <button
+            type="button"
+            class="btn btn-danger"
+            id="confirmAccept">
+            Confirm
+        </button>
+
+    </div>
+
+</dialog>
+
+
+                    <div id="sourceDetailModal" class="modal hidden">
+                        <div class="modal-card">
+                            <div class="card-header">
+                                <div>
+                                    <h3>Source Details</h3>
+                                </div>
+                                <button type="button" class="btn btn-secondary small" id="closeSourceDetailModal">Close</button>
+                            </div>
+                            <div id="sourceDetailContent"></div>
+                        </div>
+                    </div>
+
+                    <div id="figurePreviewModal" class="modal hidden">
+                        <div class="modal-card">
+                            <div class="card-header">
+                                <div>
+                                    <h3>Figure Preview</h3>
+                                </div>
+                                <button type="button" class="btn btn-secondary small" id="closeFigurePreviewModal">Close</button>
+                            </div>
+                            <div id="figurePreviewContent"></div>
+                        </div>
+                    </div>
+
+
+<!-- TEACHER DIALOG -->
+<dialog id="teacherDialog" class="modal">
+
+    <h3 id="teacherDialogTitle">Add Teacher</h3>
+
+    <form id="teacherForm">
+
+        <div class="form-group">
+            <label for="teacherName">Full name</label>
+            <input type="text" id="teacherName" required>
+        </div>
+
+        <div class="form-group">
+            <label for="teacherEmail">Email</label>
+            <input type="email" id="teacherEmail" required>
+        </div>
+
+        <div class="form-group">
+            <label for="teacherDepartment">Department</label>
+            <input type="text" id="teacherDepartment" placeholder="CSE">
+        </div>
+
+        <div class="form-group">
+            <label for="teacherPassword">
+                Password <small>(leave blank to keep unchanged)</small>
+            </label>
+            <input type="password" id="teacherPassword"
+                   autocomplete="new-password" minlength="8">
+        </div>
+
+        <div class="form-group">
+            <label for="teacherStatus">Status</label>
+
+            <select id="teacherStatus">
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="disapproved">Disapproved</option>
+            </select>
+        </div>
+
+        <div class="modal-actions">
+
+            <button type="button"
+                    class="btn btn-secondary"
+                    data-close="teacherDialog">
+                Cancel
+            </button>
+
+            <button type="submit"
+                    class="btn btn-primary"
+                    id="teacherSaveButton">
+                Save Teacher
+            </button>
+
+        </div>
+
+    </form>
+
+</dialog>
+
+
+<!-- QUESTION DIALOG -->
+
+
+<!-- PARSED PYQ QUESTION DETAILS -->
+<dialog id="pyqQuestionDetailDialog" class="modal pyq-detail-modal" aria-labelledby="pyqQuestionDetailTitle">
+    <div class="pyq-detail-header">
+        <h3 id="pyqQuestionDetailTitle">Question details</h3>
+        <button type="button" class="btn btn-secondary small" id="pyqQuestionDetailClose">Close</button>
+    </div>
+    <div id="pyqQuestionDetailBody" class="pyq-detail-body"></div>
+</dialog>
+
+<!-- EXTRACTED QUESTIONS INSPECTOR (from PYQ processing) -->
+<dialog id="pyqResultDialog" class="modal pyq-detail-modal" aria-labelledby="pyqResultTitle">
+    <div class="pyq-detail-header">
+        <h3 id="pyqResultTitle">Extracted Questions</h3>
+        <button type="button" class="btn btn-secondary small" id="pyqResultClose">Close</button>
+    </div>
+    <div id="pyqResultBody" class="pyq-detail-body"></div>
+</dialog>
+
+<!-- QUESTION EDITOR (shared by Question Bank and Generate Paper) -->
+<dialog id="questionEditorModal" class="modal" aria-labelledby="questionEditorTitle">
+    <div class="modal-card question-editor-card">
+        <div class="card-header">
+            <div>
+                <h3 id="questionEditorTitle">Add Question</h3>
+                <p id="questionEditorSubtitle">Create or edit a question.</p>
+            </div>
+            <button type="button" class="btn btn-secondary small" id="questionEditorClose">Close</button>
+        </div>
+
+        <div id="questionEditorMessage" class="form-message" role="alert"></div>
+
+        <form id="questionEditorForm" novalidate>
+            <div class="question-editor-grid">
+                <div class="form-group form-group-full">
+                    <label for="qeText">Question text</label>
+                    <textarea id="qeText" rows="4" required placeholder="Enter question text"></textarea>
+                    <span class="field-error" id="qeTextError"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="qeSubject">Subject</label>
+                    <select id="qeSubject" required>
+                        <option value="">Select subject</option>
+                    </select>
+                    <span class="field-error" id="qeSubjectError"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="qeMarks">Marks</label>
+                    <input type="number" id="qeMarks" min="1" max="100" required>
+                    <span class="field-error" id="qeMarksError"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="qeSection">Section</label>
+                    <input type="text" id="qeSection" placeholder="e.g. Part-I">
+                    <select id="qeDraftSection" style="display:none;">
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="qeQuestionNumber">Original question number</label>
+                    <input type="text" id="qeQuestionNumber" placeholder="e.g. Q1a">
+                </div>
+
+                <div class="form-group">
+                    <label for="qeSourcePdf">Source PDF</label>
+                    <input type="text" id="qeSourcePdf" placeholder="e.g. paper.pdf">
+                </div>
+
+                <div class="form-group">
+                    <label for="qeSourcePages">Page references</label>
+                    <input type="text" id="qeSourcePages" placeholder="e.g. 1, 2">
+                </div>
+
+                <div class="form-group">
+                    <label for="qePriority">Priority</label>
+                    <select id="qePriority">
+                        <option value="1">1 — Regular</option>
+                        <option value="2">2 — Higher priority</option>
+                        <option value="3">3 — Must come</option>
+                    </select>
+                </div>
+
+                <div class="form-group form-group-full">
+                    <label>Figure / table</label>
+                    <div class="section-actions">
+                        <button type="button" class="btn btn-secondary small" id="qeFigurePreview">Preview figure</button>
+                        <span id="qeFigureSummary" class="distribution-total">No figure.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions modal-actions-split">
+                <button type="button" class="btn btn-danger" id="questionEditorRemove" hidden>
+                    <svg class="btn-icon" aria-hidden="true"><use href="#icon-trash"/></svg>
+                    <span>Remove Question</span>
+                </button>
+                <div class="modal-actions-inner">
+                    <button type="button" class="btn btn-secondary" id="questionEditorCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="questionEditorSave">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- TOAST -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>

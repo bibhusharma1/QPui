@@ -1,0 +1,40 @@
+/* Question Bank */
+.accuracy-notice {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-lg);
+    align-items: flex-start;
+}
+
+.accuracy-notice-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.accuracy-notice strong {
+    display: block;
+    color: var(--warning);
+    margin-bottom: 4px;
+}
+
+.accuracy-notice p {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    margin: 0;
+}
+
+.pyq-question-table th:last-child,
+.pyq-question-table td:last-child {
+    white-space: nowrap;
+}
+
+.question-text {
+    max-width: 400px;
+}
+
+.priority-select {
+    min-width: 80px;
+}

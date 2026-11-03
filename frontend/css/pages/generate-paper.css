@@ -1,0 +1,65 @@
+/* Generate Paper */
+.generate-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-4);
+}
+
+.generate-form-grid .full-width {
+    grid-column: 1 / -1;
+}
+
+.blueprint-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.blueprint-header {
+    padding: var(--space-5) var(--space-6);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-item {
+    padding: var(--space-5) var(--space-6);
+    border-bottom: 1px solid var(--border);
+}
+
+.section-item:last-child {
+    border-bottom: none;
+}
+
+.section-header-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.marks-summary {
+    display: flex;
+    gap: var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+}
+
+.questions-table {
+    width: 100%;
+}
+
+.questions-table th,
+.questions-table td {
+    padding: var(--space-3) var(--space-4);
+}
+
+.question-editor {
+    width: 100%;
+    min-height: 80px;
+}

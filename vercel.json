@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/index.html" },
+    { "source": "/subjects", "destination": "/index.html" },
+    { "source": "/question-bank", "destination": "/index.html" },
+    { "source": "/pyqs", "destination": "/index.html" },
+    { "source": "/generate-paper", "destination": "/index.html" },
+    { "source": "/my-papers", "destination": "/index.html" },
+    { "source": "/teachers", "destination": "/index.html" },
+    { "source": "/profile", "destination": "/index.html" },
+    { "source": "/help", "destination": "/index.html" },
+    { "source": "/activity", "destination": "/index.html" },
+    { "source": "/settings", "destination": "/index.html" },
+    { "source": "/login", "destination": "/index.html" }
+  ]
+}

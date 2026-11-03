@@ -1,0 +1,38 @@
+/* PYQs */
+.pdf-upload-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    box-shadow: var(--shadow-sm);
+}
+
+.upload-zone {
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-8);
+    text-align: center;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.upload-zone:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.upload-zone.active {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.upload-zone-icon {
+    font-size: 32px;
+    margin-bottom: var(--space-3);
+}
+
+.pdf-table-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
