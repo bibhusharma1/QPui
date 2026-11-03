@@ -348,6 +348,52 @@ document.addEventListener("DOMContentLoaded", function () {
         return Boolean(currentUser && String(currentUser.role).toLowerCase() === "admin");
     }
 
+    let currentUserAssignments = null;
+    let currentUserPermissions = {};
+
+    async function loadCurrentUserAssignments() {
+        if (!currentUser) return;
+        try {
+            const data = await api(`/users/${currentUser.id || currentUser.user_id}/subjects`);
+            currentUserAssignments = data;
+            // Build permissions map
+            const assignments = data.assignments || data.subjects || data.data || [];
+            currentUserPermissions = {};
+            (Array.isArray(assignments) ? assignments : []).forEach(a => {
+                const subj = a.subject_id || a.subject || a.subjectName;
+                if (subj) {
+                    currentUserPermissions[subj] = {
+                        accessPapers: a.access_question_papers ?? a.accessPapers ?? a.permissions?.accessPapers ?? a.permissions?.questionPapers ?? true,
+                        uploadProcess: a.upload_process ?? a.uploadProcess ?? a.permissions?.uploadProcess ?? a.permissions?.process ?? true,
+                        manageBank: a.manage_question_bank ?? a.manageBank ?? a.permissions?.manageBank ?? a.permissions?.questionBank ?? true,
+                        generate: a.generate_papers ?? a.generatePapers ?? a.permissions?.generate ?? a.permissions?.generatePapers ?? true
+                    };
+                }
+            });
+        } catch (error) {
+            try {
+                const data = await api(`/teachers/me/subjects`);
+                currentUserAssignments = data;
+                const assignments = data.assignments || data.subjects || [];
+                currentUserPermissions = {};
+                (Array.isArray(assignments) ? assignments : []).forEach(a => {
+                    const subj = a.subject_id || a.subject || a.subjectName;
+                    if (subj) {
+                        currentUserPermissions[subj] = {
+                            accessPapers: a.access_question_papers ?? a.accessPapers ?? true,
+                            uploadProcess: a.upload_process ?? a.uploadProcess ?? true,
+                            manageBank: a.manage_question_bank ?? a.manageBank ?? true,
+                            generate: a.generate_papers ?? a.generatePapers ?? true
+                        };
+                    }
+                });
+            } catch (e) {
+                currentUserAssignments = null;
+                currentUserPermissions = {};
+            }
+        }
+    }
+
     async function loadCurrentUser() {
         if (!getToken()) return false;
         try {
@@ -355,6 +401,9 @@ document.addEventListener("DOMContentLoaded", function () {
             updateUserUI();
             applyRoleUI();
             if (isAdminUser()) await loadAdminAccessMode();
+            if (!isAdminUser()) {
+                await loadCurrentUserAssignments();
+            }
             return true;
         } catch (error) {
             if (error.status === 401) clearSession();
@@ -692,6 +741,34 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        // Check permissions for teachers
+        if (!isAdminUser()) {
+            try {
+                const perms = currentUserPermissions || {};
+                if (pageId === "teacher-pyqs") {
+                    const hasPerm = Object.values(perms).some(p => p && p.uploadProcess);
+                    if (!hasPerm && Object.keys(perms).length > 0) {
+                        showToast("You don't have permission to upload/process question papers.");
+                        return navigateToPage("teacher-dashboard");
+                    }
+                }
+                if (pageId === "teacher-questions") {
+                    const hasPerm = Object.values(perms).some(p => p && (p.manageBank || p.accessPapers));
+                    if (!hasPerm && Object.keys(perms).length > 0) {
+                        showToast("You don't have permission to access question bank.");
+                        return navigateToPage("teacher-dashboard");
+                    }
+                }
+                if (pageId === "teacher-generate") {
+                    const hasPerm = Object.values(perms).some(p => p && p.generate);
+                    if (!hasPerm && Object.keys(perms).length > 0) {
+                        showToast("You don't have permission to generate question papers.");
+                        return navigateToPage("teacher-dashboard");
+                    }
+                }
+            } catch (e) {}
+        }
+
         // Stop job polling when leaving the PYQs/processing screen.
         if (pageId !== "teacher-pyqs" && typeof stopAllPolling === "function") {
             stopAllPolling();
@@ -751,6 +828,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 pageLoaded.delete(pageId);
                 showToast(error.message);
             });
+        }
+        if ((pageId === "teacher-papers" || pageId === "admin-papers") && pageLoaded.has(pageId) && typeof fetchPapers === "function") {
+            fetchPapers().catch(function () {});
         }
 
         if (window.innerWidth < 1024) {
@@ -1395,8 +1475,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 const data = await api("/blueprints");
                 blueprints = data.items || [];
                 blueprintsLoaded = true;
-                subjectsCache = Array.from(new Set(blueprints.map(item => item.subject_id).filter(Boolean)));
-                if (grid) grid.innerHTML = stateHTML("▣", "Subject management is available to administrators. Your assigned subjects come from saved blueprints.");
+                let assignedFromPerms = [];
+                try {
+                    if (!isAdminUser() && currentUserPermissions) {
+                        assignedFromPerms = Object.keys(currentUserPermissions).filter(k => currentUserPermissions[k]);
+                    }
+                } catch (e) {}
+                subjectsCache = Array.from(new Set([...(blueprints.map(item => item.subject_id).filter(Boolean)), ...assignedFromPerms]));
+                if (grid) grid.innerHTML = stateHTML("▣", "Subjects assigned to you.");
                 if (subjectsCache.length) {
                     if (dashList) {
                         dashList.innerHTML = subjectsCache.map(function (subject) {
@@ -1421,7 +1507,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     const message = "No subjects assigned. Contact your administrator.";
                     ["qbPyqSubject", "paperSubject", "pyqSubject"].forEach(function (id) {
                         const select = document.getElementById(id);
-                        if (select) select.options[0].textContent = message;
+                        if (select && select.options && select.options[0]) select.options[0].textContent = message;
                     });
                 }
                 return;
@@ -2178,7 +2264,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 actions += '<button class="table-action" data-teacher-action="disapprove" data-id="' + teacher.id + '">Disapprove</button> ';
             }
 
-            actions += '<button class="table-action" data-teacher-action="edit" data-id="' + teacher.id + '">Edit</button> ' +
+            actions += '<button class="table-action" data-teacher-action="assign" data-id="' + teacher.id + '">Assign Subjects</button> ' +
+                '<button class="table-action" data-teacher-action="edit" data-id="' + teacher.id + '">Edit</button> ' +
                 '<button class="table-action danger" data-teacher-action="remove" data-id="' + teacher.id + '">Remove</button>';
 
             return "<tr>" +
@@ -2303,6 +2390,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 openTeacherDialog(teacher);
             }
 
+            if (action === "assign") {
+                openSubjectAssignment(teacher);
+            }
+
             if (action === "remove") {
                 const ok = await confirmAction(
                     "Remove teacher",
@@ -2322,6 +2413,201 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         });
+    }
+
+    /* =============================================
+       SUBJECT ASSIGNMENTS & PERMISSIONS
+    ============================================== */
+
+    let assignmentCache = {};
+    let currentAssignmentTeacher = null;
+
+    async function fetchAllSubjects() {
+        try {
+            if (isAdminUser()) {
+                const data = await api("/subjects");
+                return data.subjects || [];
+            }
+            const data = await api("/subjects");
+            return data.subjects || [];
+        } catch (error) {
+            try {
+                const data = await api("/subjects");
+                return data.subjects || [];
+            } catch (e) {
+                return [];
+            }
+        }
+    }
+
+    async function fetchTeacherAssignments(teacherId) {
+        try {
+            const data = await api(`/teachers/${teacherId}/subjects`);
+            return data;
+        } catch (error) {
+            try {
+                const data = await api(`/assignments/teacher/${teacherId}`);
+                return data;
+            } catch (e) {
+                return { assignments: [], subjects: [] };
+            }
+        }
+    }
+
+    async function saveTeacherAssignments(teacherId, assignments) {
+        try {
+            // Backend expects POST to /teachers/{id}/subjects with {subjects: [...]}
+            const subjects = Array.isArray(assignments) ? assignments : (assignments?.subjects || assignments?.assignments || []);
+            await api(`/teachers/${teacherId}/subjects`, {
+                method: "POST",
+                body: { subjects: subjects }
+            });
+            return true;
+        } catch (error) {
+            try {
+                await api(`/users/${teacherId}/subjects`, {
+                    method: "POST",
+                    body: { subjects: Array.isArray(assignments) ? assignments : (assignments?.subjects || []) }
+                });
+                return true;
+            } catch (e) {
+                throw error;
+            }
+        }
+    }
+
+    function openSubjectAssignment(teacher) {
+        if (!teacher) return;
+        currentAssignmentTeacher = teacher;
+        let modal = document.getElementById("subjectAssignmentModal");
+        if (!modal) {
+            const dialog = document.createElement("dialog");
+            dialog.id = "subjectAssignmentModal";
+            dialog.className = "modal";
+            dialog.innerHTML = `
+                <div class="modal-card" style="max-width: 900px; width: 90vw; max-height: 90vh; overflow-y: auto;">
+                    <div class="card-header">
+                        <div>
+                            <h3>Subject Assignments & Permissions</h3>
+                            <p id="assignmentTeacherInfo">Assign subjects and permissions</p>
+                        </div>
+                        <button type="button" class="btn btn-secondary small" id="closeAssignmentModal">Close</button>
+                    </div>
+                    <div id="assignmentContent" style="padding: 1rem;">
+                        <p>Loading...</p>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelAssignment">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="saveAssignment">Save Assignments</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            document.getElementById("closeAssignmentModal").addEventListener("click", () => { try { dialog.close(); } catch(e) { dialog.classList.add('hidden'); } });
+            document.getElementById("cancelAssignment").addEventListener("click", () => { try { dialog.close(); } catch(e) { dialog.classList.add('hidden'); } });
+            document.getElementById("saveAssignment").addEventListener("click", saveCurrentAssignments);
+            modal = dialog;
+            modal.addEventListener("click", function (e) { if (e.target === modal) { try { modal.close(); } catch(ex) { modal.classList.add('hidden'); } } });
+        }
+        document.getElementById("assignmentTeacherInfo").textContent = `${teacher.name} (${teacher.email})`;
+        document.getElementById("assignmentContent").innerHTML = `<p>Loading subjects and assignments...</p>`;
+        try { if (typeof modal.showModal === "function") modal.showModal(); else modal.classList.remove("hidden"); } catch(e) { modal.classList.remove("hidden"); }
+        loadAssignmentData(teacher.id);
+    }
+
+    async function loadAssignmentData(teacherId) {
+        try {
+            const [allSubjects, assignmentsData] = await Promise.all([
+                fetchAllSubjects(),
+                fetchTeacherAssignments(teacherId)
+            ]);
+            const assignments = assignmentsData.assignments || assignmentsData.data || assignmentsData || [];
+            const assignmentMap = {};
+            (Array.isArray(assignments) ? assignments : []).forEach(a => {
+                const subject = a.subject_id || a.subject || a.subjectName;
+                if (subject) {
+                    assignmentMap[subject] = {
+                        assigned: true,
+                        accessPapers: a.access_question_papers ?? a.accessPapers ?? a.permissions?.accessPapers ?? a.permissions?.questionPapers ?? true,
+                        uploadProcess: a.upload_process ?? a.uploadProcess ?? a.permissions?.uploadProcess ?? a.permissions?.process ?? true,
+                        manageBank: a.manage_question_bank ?? a.manageBank ?? a.permissions?.manageBank ?? a.permissions?.questionBank ?? true,
+                        generate: a.generate_papers ?? a.generatePapers ?? a.permissions?.generate ?? a.permissions?.generatePapers ?? true
+                    };
+                }
+            });
+            renderAssignmentUI(allSubjects, assignmentMap);
+        } catch (error) {
+            document.getElementById("assignmentContent").innerHTML = `<p class="error">Failed to load assignments: ${escapeHTML(error.message)}</p>`;
+        }
+    }
+
+    function renderAssignmentUI(subjects, assignmentMap) {
+        const content = document.getElementById("assignmentContent");
+        if (!subjects.length) {
+            content.innerHTML = `<p>No subjects available.</p>`;
+            return;
+        }
+        let html = `<table class="data-table"><thead><tr><th>Assign</th><th>Subject</th><th>Access Question Papers</th><th>Upload & Process Papers</th><th>Access & Manage Question Bank</th><th>Generate Question Papers</th></tr></thead><tbody>`;
+        subjects.forEach(subject => {
+            const subj = typeof subject === 'string' ? subject : (subject.name || subject.subject_id);
+            const map = assignmentMap[subj] || { assigned: false, accessPapers: true, uploadProcess: true, manageBank: true, generate: true };
+            html += `<tr>
+                <td><input type="checkbox" class="assign-check" data-subject="${escapeHTML(subj)}" ${map.assigned ? 'checked' : ''}></td>
+                <td>${escapeHTML(subj)}</td>
+                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="accessPapers" ${map.assigned && map.accessPapers ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="uploadProcess" ${map.assigned && map.uploadProcess ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="manageBank" ${map.assigned && map.manageBank ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="generate" ${map.assigned && map.generate ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+            </tr>`;
+        });
+        html += `</tbody></table>`;
+        content.innerHTML = html;
+        content.querySelectorAll('.assign-check').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const subj = this.getAttribute('data-subject');
+                content.querySelectorAll(`.perm-check[data-subject="${subj.replace(/"/g, '\\"')}"]`).forEach(pc => {
+                    pc.disabled = !this.checked;
+                    if (!this.checked) pc.checked = false;
+                });
+            });
+        });
+    }
+
+    async function saveCurrentAssignments() {
+        if (!currentAssignmentTeacher) return;
+        const content = document.getElementById("assignmentContent");
+        const assignments = [];
+        content.querySelectorAll('.assign-check:checked').forEach(cb => {
+            const subj = cb.getAttribute('data-subject');
+            const getPerm = (perm) => {
+                const pc = content.querySelector(`.perm-check[data-subject="${subj.replace(/"/g, '\\"')}"][data-perm="${perm}"]`);
+                return pc ? pc.checked : true;
+            };
+            assignments.push({
+                subject_id: subj,
+                subject: subj,
+                assigned: true,
+                access_question_papers: getPerm('accessPapers'),
+                upload_process: getPerm('uploadProcess'),
+                manage_question_bank: getPerm('manageBank'),
+                generate_papers: getPerm('generate'),
+                permissions: {
+                    accessPapers: getPerm('accessPapers'),
+                    uploadProcess: getPerm('uploadProcess'),
+                    manageBank: getPerm('manageBank'),
+                    generatePapers: getPerm('generate')
+                }
+            });
+        });
+        try {
+            await saveTeacherAssignments(currentAssignmentTeacher.id, assignments);
+            showToast("Assignments saved successfully");
+            const modalEl = document.getElementById("subjectAssignmentModal");
+            try { if (modalEl && typeof modalEl.close === 'function') modalEl.close(); else if (modalEl) modalEl.classList.add('hidden'); } catch(e) {}
+            loadTeachers().catch(function(){});
+        } catch (error) {
+            showToast("Failed to save assignments: " + error.message);
+        }
     }
 
     /* =============================================
@@ -3466,6 +3752,15 @@ document.addEventListener("DOMContentLoaded", function () {
         return letters[i] || ("Section " + (sections.length + 1));
     }
 
+    function generateBlueprintId() {
+        try {
+            if (window.crypto && typeof window.crypto.randomUUID === "function") {
+                return window.crypto.randomUUID();
+            }
+        } catch (e) {}
+        return "bp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    }
+
     function renderSections() {
         if (!sectionTableBody) return;
         sectionTableBody.innerHTML = sections.map(function (section, index) {
@@ -3485,14 +3780,17 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function readSectionsFromTable() {
-        sections = sections.map(function (section, index) {
-            const nameInput = sectionTableBody.querySelector('.section-name[data-index="' + index + '"]');
-            const qInput = sectionTableBody.querySelector('.section-questions[data-index="' + index + '"]');
-            const mInput = sectionTableBody.querySelector('.section-marks[data-index="' + index + '"]');
+        if (!sectionTableBody) return;
+        const rows = Array.prototype.slice.call(sectionTableBody.querySelectorAll("tr"));
+        sections = rows.map(function (row, index) {
+            const fallback = sections[index] || {};
+            const nameInput = row.querySelector(".section-name");
+            const qInput = row.querySelector(".section-questions");
+            const mInput = row.querySelector(".section-marks");
             return {
-                name: nameInput ? nameInput.value.trim() || section.name : section.name,
-                questions: qInput ? Number(qInput.value) || 0 : section.questions,
-                marks: mInput ? Number(mInput.value) || 0 : section.marks
+                name: nameInput ? (nameInput.value.trim() || fallback.name || ("Section " + (index + 1))) : (fallback.name || ("Section " + (index + 1))),
+                questions: qInput ? (Number(qInput.value) || 0) : (Number(fallback.questions) || 0),
+                marks: mInput ? (Number(mInput.value) || 0) : (Number(fallback.marks) || 0)
             };
         });
     }
@@ -3502,10 +3800,31 @@ document.addEventListener("DOMContentLoaded", function () {
         const total = sections.reduce(function (sum, section) {
             return sum + ((Number(section.questions) || 0) * (Number(section.marks) || 0));
         }, 0);
-        const paperTotal = Number(document.getElementById("totalMarks")?.value) || 0;
-        const ok = sections.length > 0 && total === paperTotal;
+        const totalMarksInput = document.getElementById("totalMarks");
+        let paperTotal = Number(totalMarksInput?.value);
+        if (!Number.isFinite(paperTotal) || totalMarksInput?.value === "") {
+            const currentBlueprint = Array.isArray(blueprints)
+                ? blueprints.find(function (item) { return String(blueprintIdOf(item)) === String(currentBlueprintId); })
+                : null;
+            if (currentBlueprint && currentBlueprint.total_marks != null) {
+                const bpTotal = Number(currentBlueprint.total_marks);
+                if (Number.isFinite(bpTotal)) paperTotal = bpTotal;
+            }
+        }
+        const target = Number.isFinite(paperTotal) ? paperTotal : 0;
+        const ok = sections.length > 0 && total === target;
+        // Keep each section's displayed total in sync with its inputs.
+        if (sectionTableBody) {
+            const rows = Array.prototype.slice.call(sectionTableBody.querySelectorAll("tr"));
+            rows.forEach(function (row, index) {
+                const cell = row.querySelector(".section-total-cell");
+                if (cell && sections[index]) {
+                    cell.textContent = String((Number(sections[index].questions) || 0) * (Number(sections[index].marks) || 0));
+                }
+            });
+        }
         if (sectionTotalMessage) {
-            sectionTotalMessage.textContent = "Sections total: " + total + " / " + paperTotal;
+            sectionTotalMessage.textContent = "Sections total: " + total + " / " + target;
             sectionTotalMessage.style.color = ok ? "#16a34a" : "#dc2626";
         }
         return ok;
@@ -3675,6 +3994,13 @@ document.addEventListener("DOMContentLoaded", function () {
         return blueprint ? (blueprint.blueprint_id || blueprint.id) : null;
     }
 
+    function isCanonicalDefaultBlueprint(blueprint) {
+        if (!blueprint) return false;
+        const id = String(blueprintIdOf(blueprint) || "").trim().toLowerCase();
+        const name = String(blueprint.name || "").trim().toLowerCase();
+        return id === "default-generic" || name === "default-generic" || id === "default" && Boolean(blueprint.is_default);
+    }
+
     function applyBlueprint(blueprint) {
         if (!blueprint) return;
         currentBlueprintId = blueprintIdOf(blueprint);
@@ -3719,14 +4045,22 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderBlueprintSelect() {
         const select = document.getElementById("blueprintSelect");
         if (!select) return;
+        const customBlueprints = (Array.isArray(blueprints) ? blueprints : []).filter(function (blueprint) {
+            return !isCanonicalDefaultBlueprint(blueprint);
+        });
         const current = currentBlueprintId || "";
-        select.innerHTML = '<option value="">Default blueprint</option>' + blueprints.map(function (blueprint) {
+        if (!customBlueprints.length) {
+            select.innerHTML = '<option value="">No saved blueprints</option>';
+            select.value = "";
+            return;
+        }
+        select.innerHTML = customBlueprints.map(function (blueprint) {
             const id = blueprintIdOf(blueprint);
             return '<option value="' + escapeHTML(String(id)) + '">' +
-                escapeHTML(blueprint.name || "") + (blueprint.is_default ? " (default)" : "") +
+                escapeHTML(blueprint.name || "") +
                 "</option>";
         }).join("");
-        if (current && blueprints.some(function (b) { return String(blueprintIdOf(b)) === String(current); })) {
+        if (current && customBlueprints.some(function (b) { return String(blueprintIdOf(b)) === String(current); })) {
             select.value = current;
         } else {
             select.value = "";
@@ -3739,12 +4073,12 @@ document.addEventListener("DOMContentLoaded", function () {
             const data = blueprintsLoaded
                 ? { items: blueprints }
                 : await api("/blueprints");
-            blueprints = data.items || data.blueprints || [];
+            blueprints = (data.items || data.blueprints || []).filter(function (b) { return !isCanonicalDefaultBlueprint(b); });
             blueprintsLoaded = true;
             renderBlueprintSelect();
-            const defaultBlueprint = blueprints.find(function (b) { return b.is_default; }) || blueprints[0];
-            if (defaultBlueprint) {
-                applyBlueprint(defaultBlueprint);
+            const firstCustom = blueprints[0];
+            if (firstCustom) {
+                applyBlueprint(firstCustom);
             } else {
                 currentBlueprintId = null;
                 renderBlueprintSelect();
@@ -3835,11 +4169,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const subject = document.getElementById("paperSubject")?.value || null;
         const examType = document.getElementById("examType")?.value.trim() || null;
         const current = blueprints.find(item => String(blueprintIdOf(item)) === String(currentBlueprintId));
-        if (current?.is_default) {
+        if (isCanonicalDefaultBlueprint(current)) {
             setBlueprintStatus("The default blueprint is protected. Duplicate it before saving changes.", true);
             return;
         }
+        const blueprintId = currentBlueprintId || generateBlueprintId();
         const payload = {
+            blueprint_id: blueprintId,
             name: name,
             description: descInput ? descInput.value.trim() || null : null,
             subject_id: subject,
@@ -3866,7 +4202,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     body: payload
                 });
             }
-            const savedId = blueprintIdOf(saved);
+            const savedId = blueprintIdOf(saved) || blueprintId;
             blueprintsLoaded = true;
             const existingIndex = blueprints.findIndex(function (b) { return String(blueprintIdOf(b)) === String(savedId); });
             if (existingIndex >= 0) blueprints[existingIndex] = saved;
@@ -3918,7 +4254,9 @@ document.addEventListener("DOMContentLoaded", function () {
     async function ensureBlueprintForGeneration(title, examType, subject) {
         const current = blueprints.find(item => String(blueprintIdOf(item)) === String(currentBlueprintId));
         if (current && blueprintMatchesCurrent()) return current;
+        const payloadBlueprintId = (current && !current.is_default && currentBlueprintId) ? currentBlueprintId : generateBlueprintId();
         const payload = {
+            blueprint_id: payloadBlueprintId,
             name: ((title || "Untitled paper") + (examType ? " — " + examType : "")).trim(),
             description: null,
             subject_id: subject || null,
@@ -4081,6 +4419,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         '<button type="button" class="btn btn-secondary small draft-source" data-si="' + si + '" data-qi="' + qi + '" title="View source" aria-label="View source"><svg class="btn-icon" aria-hidden="true"><use href="#icon-file"/></svg>Source</button> ' +
                         '<button type="button" class="btn btn-secondary small draft-up" data-si="' + si + '" data-qi="' + qi + '">Up</button> ' +
                         '<button type="button" class="btn btn-secondary small draft-down" data-si="' + si + '" data-qi="' + qi + '">Down</button> ' +
+                        '<button type="button" class="btn btn-secondary small draft-regenerate" data-si="' + si + '" data-qi="' + qi + '">Regenerate</button> ' +
                         '<button type="button" class="btn btn-danger small draft-remove" data-si="' + si + '" data-qi="' + qi + '">Remove</button>' +
                         '</div>' +
                     '</td>' +
@@ -4156,6 +4495,56 @@ document.addEventListener("DOMContentLoaded", function () {
             generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(generatedDraft.draft_id) + "/questions/" + encodeURIComponent(draftQuestionId(question)), { method: "DELETE" });
             renderDraftReview();
         } catch (error) { showToast(error.message); }
+    }
+
+    async function regenerateDraftQuestion(si, qi) {
+        if (!generatedDraft) return;
+        const section = generatedDraft.sections[si];
+        if (!section) return;
+        const question = section.questions[qi];
+        if (!question) return;
+        const marks = Number(question.marks);
+        const sectionName = section.name;
+        const draftId = generatedDraft.draft_id;
+        const originalGlobalIndex = generatedDraft.sections.slice(0, si).reduce(function (n, item) {
+            return n + (Array.isArray(item.questions) ? item.questions.length : 0);
+        }, 0) + qi;
+        const existingIds = new Set(generatedDraft.sections.flatMap(function (item) {
+            return (item.questions || []).map(draftQuestionId);
+        }));
+        try {
+            await loadQuestionBank(generatedDraft.subject);
+        } catch (e) {}
+        const candidates = (questionBankCache || []).filter(function (item) {
+            if (existingIds.has(item.question_id)) return false;
+            if (!Number.isFinite(marks) || marks <= 0) return true;
+            return Number(item.marks) === marks;
+        });
+        if (!candidates.length) {
+            showToast("No replacement question available with the same marks.");
+            return;
+        }
+        const replacement = candidates[Math.floor(Math.random() * candidates.length)];
+        try {
+            generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/questions/" + encodeURIComponent(draftQuestionId(question)), { method: "DELETE" });
+            generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/questions", { method: "POST", body: { question_id: replacement.question_id, section: sectionName } });
+            // Move the replacement into the original slot when possible.
+            try {
+                const ids = generatedDraft.sections.flatMap(function (item) {
+                    return (item.questions || []).map(draftQuestionId);
+                });
+                const replIndex = ids.indexOf(replacement.question_id);
+                if (replIndex !== -1 && replIndex !== originalGlobalIndex && originalGlobalIndex < ids.length) {
+                    const moved = ids.splice(replIndex, 1)[0];
+                    ids.splice(originalGlobalIndex, 0, moved);
+                    generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/question-order", { method: "PUT", body: { question_ids: ids } });
+                }
+            } catch (orderError) { /* keep appended position if reorder fails */ }
+            renderDraftReview();
+            showToast("Question regenerated.");
+        } catch (error) {
+            showToast(error.message || "Could not regenerate the question.");
+        }
     }
 
     function changeDraftSection(si, qi, newSectionName) {
@@ -4320,6 +4709,11 @@ document.addEventListener("DOMContentLoaded", function () {
             const remove = event.target.closest(".draft-remove");
             const source = event.target.closest(".draft-source");
             const figure = event.target.closest(".draft-figure");
+            const regenerate = event.target.closest(".draft-regenerate");
+            if (regenerate) {
+                regenerateDraftQuestion(Number(regenerate.getAttribute("data-si")), Number(regenerate.getAttribute("data-qi")));
+                return;
+            }
             if (up) {
                 moveDraftQuestion(Number(up.getAttribute("data-si")), Number(up.getAttribute("data-qi")), -1);
                 return;
@@ -4580,6 +4974,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     };
                 }
                 showToast("Draft generated. Review it before exporting.");
+                if (typeof fetchPapers === "function") {
+                    fetchPapers().catch(function () {});
+                }
             } catch (error) {
                 showToast(error.message || "Generation failed.");
             } finally {
