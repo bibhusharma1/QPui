@@ -2,32 +2,230 @@
    Generic client for the FastAPI backend described in for_ui_developers.md.
    Override the base URL before this script loads: window.QPG_API_BASE = "https://host"; */
 
-function resolveApiBase() {
-    let candidate = window.QPG_API_BASE || window.QPG_API_URL;
-    if (!candidate) {
-        const meta = document.querySelector('meta[name="qpg-api-base"]');
-        if (meta && meta.content) candidate = meta.content.trim();
-    }
-    if (!candidate) {
-        const scriptTag = document.currentScript || document.querySelector('script[data-api-base]');
-        if (scriptTag && scriptTag.getAttribute("data-api-base")) candidate = scriptTag.getAttribute("data-api-base").trim();
-    }
-    if (!candidate) candidate = "http://localhost:8000";
-    return candidate.replace(/\/+$/, "");
+const LOCAL_API_BASE = "http://localhost:8000";
+const PROD_API_BASE = "https://qpengine-6f07.onrender.com";
+const BACKEND_TARGET_KEY = "qpg_backend_target"; // "local" | "production"
+
+function isLocalDevHost() {
+    try {
+        const h = (typeof location !== "undefined") ? location.hostname : "";
+        const p = (typeof location !== "undefined") ? location.port : "";
+        return h === "localhost" || h === "127.0.0.1" || h === "[::1]" ||
+            p === "3000" || p === "5173" || p === "8080";
+    } catch (e) { return false; }
 }
-const API_BASE = resolveApiBase();
-const TOKEN_KEY = "qpg_token";
+
+function envPreferredTarget() {
+    return isLocalDevHost() ? "local" : "production";
+}
+
+function getStoredBackendTarget() {
+    try {
+        const v = localStorage.getItem(BACKEND_TARGET_KEY);
+        if (v === "local" || v === "production") return v;
+    } catch (e) {}
+    return null;
+}
+
+function targetToBase(t) {
+    return (t === "local") ? LOCAL_API_BASE : PROD_API_BASE;
+}
+
+function tokenKeyFor(t) {
+    return "qpg_token_" + ((t === "local") ? "local" : "production");
+}
+
+// Allow explicit override via globals/meta/script attr (highest priority).
+function explicitApiOverride() {
+    let candidate = (typeof window !== "undefined") ? (window.QPG_API_BASE || window.QPG_API_URL) : null;
+    if (!candidate) {
+        try {
+            const meta = document.querySelector('meta[name="qpg-api-base"]');
+            if (meta && meta.content) candidate = meta.content.trim();
+        } catch (e) {}
+    }
+    if (!candidate) {
+        try {
+            const scriptTag = document.currentScript || document.querySelector('script[data-api-base]');
+            if (scriptTag && scriptTag.getAttribute("data-api-base")) candidate = scriptTag.getAttribute("data-api-base").trim();
+        } catch (e) {}
+    }
+    return candidate ? String(candidate).replace(/\/+$/, "") : null;
+}
+
+const __overrideBase = explicitApiOverride();
+
+// Active backend target state
+let activeBackendTarget = (function () {
+    if (__overrideBase) {
+        // infer target from override
+        if (__overrideBase.indexOf("localhost") !== -1 || __overrideBase.indexOf("127.0.0.1") !== -1) return "local";
+        return "production";
+    }
+    const stored = getStoredBackendTarget();
+    if (stored) return stored;
+    return envPreferredTarget();
+})();
+
+// migrate legacy token into target-specific storage
+(function migrateLegacyToken() {
+    try {
+        const legacy = sessionStorage.getItem("qpg_token");
+        if (legacy) {
+            const k = tokenKeyFor(activeBackendTarget);
+            if (!sessionStorage.getItem(k)) sessionStorage.setItem(k, legacy);
+        }
+    } catch (e) {}
+})();
+
+let API_BASE = __overrideBase || targetToBase(activeBackendTarget);
 
 function getToken() {
-    return sessionStorage.getItem(TOKEN_KEY);
+    return sessionStorage.getItem(tokenKeyFor(activeBackendTarget));
 }
 
 function setToken(token) {
-    sessionStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem(tokenKeyFor(activeBackendTarget), token);
 }
 
 function clearSession() {
-    sessionStorage.removeItem(TOKEN_KEY);
+    try { sessionStorage.removeItem(tokenKeyFor(activeBackendTarget)); } catch (e) {}
+    try { sessionStorage.removeItem("qpg_token"); } catch (e) {}
+}
+
+function clearAllSessions() {
+    try { sessionStorage.removeItem(tokenKeyFor("local")); } catch (e) {}
+    try { sessionStorage.removeItem(tokenKeyFor("production")); } catch (e) {}
+    try { sessionStorage.removeItem("qpg_token"); } catch (e) {}
+}
+
+function getCurrentBackendTarget() { return activeBackendTarget; }
+
+function targetForBase(base) {
+    return (base === LOCAL_API_BASE) ? "local" : "production";
+}
+
+function setBackendTarget(target) {
+    if (target !== "local" && target !== "production") return;
+    if (target === activeBackendTarget) return;
+    activeBackendTarget = target;
+    API_BASE = targetToBase(target);
+    try { localStorage.setItem(BACKEND_TARGET_KEY, target); } catch (e) {}
+    if (typeof window !== "undefined") window.location.reload();
+}
+
+function hasSessionFor(t) {
+    try { return !!sessionStorage.getItem(tokenKeyFor(t)); } catch (e) { return false; }
+}
+
+// reachability probe (no-cors, short timeout)
+function probeBackend(base, timeoutMs) {
+    return new Promise(function (resolve) {
+        let ctrl = null;
+        try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+        const timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, timeoutMs || 3000);
+        try {
+            fetch(base + "/health", { method: "GET", mode: "no-cors", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+                .then(function () { clearTimeout(timer); resolve(true); })
+                .catch(function () { clearTimeout(timer); resolve(false); });
+        } catch (e) {
+            clearTimeout(timer);
+            resolve(false);
+        }
+    });
+}
+
+// Auto-detect best backend. Returns a promise.
+let backendInitPromise = (async function () {
+    // If explicit override, trust it.
+    if (__overrideBase) {
+        updateBackendSelectorUI();
+        return;
+    }
+    // If an active session exists, keep its target (avoid switching mid-session).
+    if (hasSessionFor("local") || hasSessionFor("production")) {
+        if (!hasSessionFor(activeBackendTarget)) {
+            activeBackendTarget = hasSessionFor("local") ? "local" : "production";
+            API_BASE = targetToBase(activeBackendTarget);
+        }
+        try { localStorage.setItem(BACKEND_TARGET_KEY, activeBackendTarget); } catch (e) {}
+        updateBackendSelectorUI();
+        return;
+    }
+    // No session: probe preferred target, fall back to other if unreachable.
+    const stored = getStoredBackendTarget();
+    let preferred = stored || envPreferredTarget();
+    // On deployed (non-local) UI, never default to local silently; preferred already production unless stored.
+    const preferredReachable = await probeBackend(targetToBase(preferred), 3000);
+    if (preferredReachable) {
+        activeBackendTarget = preferred;
+    } else {
+        const other = (preferred === "local") ? "production" : "local";
+        // On deployed UI, do not switch to localhost unless genuinely reachable.
+        if (!(other === "local" && !isLocalDevHost())) {
+            const otherReachable = await probeBackend(targetToBase(other), 3000);
+            if (otherReachable) activeBackendTarget = other;
+        }
+    }
+    API_BASE = targetToBase(activeBackendTarget);
+    try { localStorage.setItem(BACKEND_TARGET_KEY, activeBackendTarget); } catch (e) {}
+    updateBackendSelectorUI();
+})();
+
+// Fallback coordination
+let backendSwitchCooldownUntil = 0;
+
+function tryFallbackBackend() {
+    const now = Date.now();
+    if (now < backendSwitchCooldownUntil) return false;
+    backendSwitchCooldownUntil = now + 60000;
+    const other = (activeBackendTarget === "local") ? "production" : "local";
+    // Never fall back to localhost on deployed UI unless reachable (probe synchronously-ish via cached? attempt)
+    activeBackendTarget = other;
+    API_BASE = targetToBase(other);
+    try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
+    clearSession();
+    return true;
+}
+
+async function handleBackendFailureAndMaybeSwitch() {
+    const now = Date.now();
+    if (now < backendSwitchCooldownUntil) return false;
+    backendSwitchCooldownUntil = now + 60000;
+    const other = (activeBackendTarget === "local") ? "production" : "local";
+    // deployed UI: don't switch to local unless reachable
+    if (other === "local" && !isLocalDevHost()) {
+        const r = await probeBackend(LOCAL_API_BASE, 2000);
+        if (!r) return false;
+    } else {
+        const r = await probeBackend(targetToBase(other), 2000);
+        if (!r) return false;
+    }
+    activeBackendTarget = other;
+    API_BASE = targetToBase(other);
+    try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
+    clearSession();
+    if (typeof window !== "undefined") window.location.reload();
+    return true;
+}
+
+function updateBackendSelectorUI() {
+    try {
+        const sel = document.getElementById("backendTargetSelect");
+        if (sel) sel.value = activeBackendTarget;
+        const disp = document.getElementById("backendTargetDisplay");
+        if (disp) disp.textContent = API_BASE;
+    } catch (e) {}
+}
+
+// Expose for debugging/external
+if (typeof window !== "undefined") {
+    window.QPG_BACKEND = {
+        get active() { return activeBackendTarget; },
+        get base() { return API_BASE; },
+        set: setBackendTarget,
+        clearAll: clearAllSessions
+    };
 }
 
 function decodeToken(token) {
@@ -104,6 +302,15 @@ async function apiRequest(path, options = {}) {
         delete fetchOptions.skipAuth;
         response = await fetch(API_BASE + path, fetchOptions);
     } catch (error) {
+        // Attempt fallback backend on network failure.
+        try {
+            const switched = await handleBackendFailureAndMaybeSwitch();
+            if (switched) {
+                throw new Error("Backend switched to " + API_BASE + ". Please retry.");
+            }
+        } catch (e) {
+            if (e && e.message && e.message.indexOf("Backend switched") !== -1) throw e;
+        }
         throw new Error("Cannot reach server at " + API_BASE);
     }
 
@@ -5885,16 +6092,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
     /* INITIALIZE */
 
-    if (getToken()) {
-        loadCurrentUser().then(function (valid) {
-            if (valid) showApplication();
-            else showLoginPage();
-        }).catch(function (error) {
+    // Wire backend selector (if present)
+    (function wireBackendSelector() {
+        const sel = document.getElementById("backendTargetSelect");
+        const disp = document.getElementById("backendTargetDisplay");
+        if (sel) {
+            sel.value = getCurrentBackendTarget();
+            sel.addEventListener("change", function () {
+                setBackendTarget(sel.value);
+            });
+        }
+        if (disp) disp.textContent = API_BASE;
+        // keep display in sync after async init
+        if (backendInitPromise && typeof backendInitPromise.then === "function") {
+            backendInitPromise.then(function () {
+                if (sel) sel.value = getCurrentBackendTarget();
+                if (disp) disp.textContent = API_BASE;
+            }).catch(function () {});
+        }
+    })();
+
+    // Wait for backend selection before verifying session
+    const startApp = function () {
+        if (getToken()) {
+            loadCurrentUser().then(function (valid) {
+                if (valid) showApplication();
+                else showLoginPage();
+            }).catch(function (error) {
+                showLoginPage();
+                showToast("Could not verify your session: " + error.message);
+            });
+        } else {
             showLoginPage();
-            showToast("Could not verify your session: " + error.message);
-        });
+        }
+        window.history.scrollRestoration = "auto";
+    };
+
+    if (backendInitPromise && typeof backendInitPromise.then === "function") {
+        backendInitPromise.then(startApp).catch(startApp);
     } else {
-        showLoginPage();
+        startApp();
     }
-    window.history.scrollRestoration = "auto";
 });
