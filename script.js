@@ -1823,8 +1823,8 @@ document.addEventListener("DOMContentLoaded", function () {
             : String(status || "").trim().toLowerCase();
 
         const map = {
-            succeeded: ["ready", "Completed"],
-            completed: ["ready", "Completed"],
+            succeeded: ["ready", "Parsed"],
+            completed: ["ready", "Parsed"],
             failed: ["failed", "Failed"],
             running: ["processing", "Processing"],
             queued: ["processing", "Queued"],
@@ -1862,7 +1862,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderPdfItems() {
        const tbody = document.getElementById("pyqTableBody");
        if (!tbody) return;
-       const subject = document.getElementById("pyqSubject")?.value || "";
+       const selectedSubject = document.getElementById("pyqSubject")?.value || "";
        const search = (document.getElementById("pyqSearch")?.value || "").trim().toLowerCase();
         const year = document.getElementById("pyqYearFilter")?.value || "";
         const status = document.getElementById("pyqStatusFilter")?.value || "";
@@ -1899,7 +1899,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const action = function (key, label, disabled, extra) {
                 return '<button type="button" class="table-action pyq-action ' + (extra || '') + '" data-action="' + key + '"' + (disabled ? ' disabled aria-disabled="true"' : '') + '>' + pyqActionIcon(key) + '<span>' + label + '</span></button>';
             };
-            return '<tr class="pyq-file-row" data-file="' + escapeHTML(item.filename) + '" data-subject="' + escapeHTML(subject) + '" data-review="' + escapeHTML(item.review_status || "unreviewed") + '" data-status="' + escapeHTML(normalized) + '">' +
+            const rowSubject = (item && item.subject) ? item.subject : selectedSubject;
+            return '<tr class="pyq-file-row" data-file="' + escapeHTML(item.filename) + '" data-subject="' + escapeHTML(rowSubject) + '" data-review="' + escapeHTML(item.review_status || "unreviewed") + '" data-status="' + escapeHTML(normalized) + '">' +
                 '<td><div class="pyq-file-primary"><div class="pyq-file-title"><svg class="pyq-pdf-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span class="pyq-filename" title="' + escapeHTML(item.filename) + '">' + escapeHTML(item.filename) + '</span></div><div class="status-cell">' + statusBadge(item.status) + (reviewed ? ' <span class="status approved">Reviewed</span>' : '') + '</div></div>' +
                 '<div class="pyq-file-secondary"><div class="pyq-file-metadata">' + details.join("") + '</div><div class="pyq-file-actions" aria-label="Actions for ' + escapeHTML(item.filename) + '">' +
                 action("process", "Process", busy, "") + action("result", "Result", !resultAvailable, "") + action("docx", "DOCX", !resultAvailable, "") + action("review", reviewed ? "Unreview" : "Review", false, "") + action("remove", "Remove", false, "danger") +
@@ -1985,6 +1986,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "⟳", "Loading PDFs…", "loading", 1);
 
         let items;
+        let loadError = null;
 
         try {
             const data = await api("/subjects/" + encodeURIComponent(subject) + "/pdfs");
@@ -1994,23 +1996,61 @@ document.addEventListener("DOMContentLoaded", function () {
                 : (data.pdfs || data.files || data.items || []);
         } catch (error) {
             if (requestToken !== pyqPdfLoadToken) return;
+            loadError = error;
+            items = null;
+        }
+
+        if (loadError) {
+            if (requestToken !== pyqPdfLoadToken) return;
+            let message = loadError.message || "Could not load PDFs.";
+            if (loadError.status === 404) message = "Subject not found (404).";
+            else if (loadError.status === 401) message = "Session expired. Please log in again.";
+            else if (loadError.status === 403) message = "You do not have permission to view these PDFs.";
+            else if (loadError.status >= 500) message = "Server error while loading PDFs. Please try again.";
+            else if (!loadError.status) message = "Network error. Could not reach the server.";
             tbody.innerHTML = '<tr><td colspan="1" class="state-cell error">' +
-                "<strong>Could not load PDFs.</strong> " + escapeHTML(error.message) +
+                "<strong>Could not load PDFs.</strong> " + escapeHTML(message) +
                 ' <button type="button" class="btn btn-secondary small" data-pyq-retry>Retry</button></td></tr>';
+            pyqPdfItems = [];
             return;
         }
 
         if (requestToken !== pyqPdfLoadToken) return;
 
-        pyqPdfItems = items;
+        pyqPdfItems = (items || []).map(function (item) {
+            if (item && typeof item === "object") {
+                if (!item.subject) item = Object.assign({}, item, { subject: subject });
+            }
+            return item;
+        });
 
-        if (!items.length) {
+        // Normalize statuses using the shared helper so parsed PDFs are marked
+        // available even when the backend omits result_available.
+        if (window.PYQStatus && typeof window.PYQStatus.applyPdfStatuses === "function") {
+            pyqPdfItems = window.PYQStatus.applyPdfStatuses(pyqPdfItems, [], subject);
+            pyqPdfItems = pyqPdfItems.map(function (item) {
+                if (item && typeof item === "object" && !item.subject) item.subject = subject;
+                return item;
+            });
+        }
+
+        if (!pyqPdfItems.length) {
             tbody.innerHTML = tableStateHTML(
                 "◫", "No PDFs uploaded yet. Use the Upload button above.", "", 1);
             return;
         }
 
         renderPdfItems();
+
+        // Show existing progress for active jobs without starting new ones.
+        pyqPdfItems.forEach(function (item) {
+            const normalized = (window.PYQStatus && typeof window.PYQStatus.normalizeStatus === "function")
+                ? window.PYQStatus.normalizeStatus(item.status)
+                : String(item.status || "").toLowerCase();
+            if ((normalized === "processing" || normalized === "queued" || normalized === "running") && item.job_id) {
+                startPolling(item.subject || subject, item.filename, item.job_id);
+            }
+        });
     }
 
     ["pyqSearch", "pyqYearFilter", "pyqStatusFilter"].forEach(function (id) {
@@ -2071,12 +2111,28 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const activePollers = new Map();
+    const activeProcessKeys = new Set();
 
-    function stopPolling(filename) {
-        const timer = activePollers.get(filename);
+    function pollerKey(subject, filename) {
+        return String(subject || "") + "::" + String(filename || "");
+    }
+
+    function stopPolling(subject, filename) {
+        let key;
+        if (filename === undefined) {
+            // Legacy single-arg call (filename only).
+            key = String(subject);
+            // Try to find a matching composite key.
+            for (const k of activePollers.keys()) {
+                if (k === key || k.endsWith("::" + key)) { key = k; break; }
+            }
+        } else {
+            key = pollerKey(subject, filename);
+        }
+        const timer = activePollers.get(key);
         if (timer) {
             clearInterval(timer);
-            activePollers.delete(filename);
+            activePollers.delete(key);
         }
     }
 
@@ -2087,42 +2143,74 @@ document.addEventListener("DOMContentLoaded", function () {
         activePollers.clear();
     }
 
+    function isTerminalJobStatus(status) {
+        const normalized = String(status || "").trim().toLowerCase();
+        return normalized === "succeeded" || normalized === "completed" ||
+            normalized === "done" || normalized === "success" ||
+            normalized === "failed" || normalized === "error" || normalized === "errored";
+    }
+
     function startPolling(subject, filename, jobId) {
-        // Prevent duplicate timers for the same file.
-        stopPolling(filename);
+        const key = pollerKey(subject, filename);
+
+        // Prevent duplicate timers / requests for the same document.
+        stopPolling(subject, filename);
+
+        let settled = false;
 
         const timer = setInterval(async function () {
+            if (settled) return;
             let job;
 
             try {
                 job = await api("/jobs/" + encodeURIComponent(jobId));
             } catch (error) {
-                stopPolling(filename);
-                showToast(error.message);
+                settled = true;
+                stopPolling(subject, filename);
+                const row = document.querySelector(
+                    '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"][data-subject="' + window.CSS.escape(subject) + '"]'
+                ) || document.querySelector(
+                    '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"]'
+                );
+                if (row) {
+                    const cell = row.querySelector(".status-cell");
+                    if (cell) cell.innerHTML = statusBadge("failed");
+                }
+                showToast((error && error.message) ? error.message : "Could not poll job status.");
                 return;
             }
 
             const row = document.querySelector(
-                '#pyqTableBody tr[data-file="' +
-                window.CSS.escape(filename) + '"]'
+                '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"]'
             );
 
             if (row) {
-                row.querySelector(".status-cell").innerHTML =
+                const cell = row.querySelector(".status-cell");
+                if (cell) cell.innerHTML =
                     statusBadge(job.status) +
                     (job.stage ? " <small>" + escapeHTML(job.stage) + "</small>" : "");
             }
 
-            if (job.status === "succeeded" || job.status === "failed") {
-                stopPolling(filename);
-                loadPdfList().catch(function () {});
-                showToast(job.status === "succeeded"
-                    ? filename + " processed successfully"
-                    : filename + " failed: " + (job.error || "unknown error"));
-            }
-        }, 4500);
+            if (isTerminalJobStatus(job.status)) {
+                settled = true;
+                stopPolling(subject, filename);
 
-        activePollers.set(filename, timer);
+                if (String(job.status).toLowerCase() === "failed" || String(job.status).toLowerCase() === "error" || String(job.status).toLowerCase() === "errored") {
+                    const errMsg = (job.error && String(job.error).trim()) ? job.error : (job.message || "Processing failed.");
+                    showToast(filename + " failed: " + errMsg);
+                } else {
+                    showToast(filename + " processed successfully");
+                }
+
+                // Refresh the PDF list for the correct subject when it matches the current view.
+                const currentSubject = document.getElementById("pyqSubject") ? document.getElementById("pyqSubject").value : "";
+                if (!currentSubject || currentSubject === subject) {
+                    loadPdfList().catch(function () {});
+                }
+            }
+        }, 2000);
+
+        activePollers.set(key, timer);
     }
 
     function questionText(question) {
@@ -2158,6 +2246,20 @@ document.addEventListener("DOMContentLoaded", function () {
             const action = button.getAttribute("data-action");
 
             if (action === "process") {
+                const key = pollerKey(subject, filename);
+                if (activePollers.has(key) || activeProcessKeys.has(key)) {
+                    showToast(filename + " is already being processed.");
+                    return;
+                }
+
+                // Also prevent if the row is already in a processing/queued state.
+                const rowStatus = row.getAttribute("data-status");
+                if (rowStatus === "processing" || rowStatus === "queued" || rowStatus === "running") {
+                    showToast(filename + " is already being processed.");
+                    return;
+                }
+
+                activeProcessKeys.add(key);
                 setButtonLoading(button, true, "Starting…");
 
                 try {
@@ -2165,12 +2267,31 @@ document.addEventListener("DOMContentLoaded", function () {
                         pdfPath(subject, filename) + "/process",
                         { method: "POST", body: { force: true } }
                     );
-                    if (!started?.job_id) throw new Error("The backend returned no job_id; processing status cannot be tracked.");
+                    const jobId = started && (started.job_id || started.jobId || started.id);
+                    if (!jobId) throw new Error("The backend returned no job_id; processing status cannot be tracked.");
                     showToast("Processing started for " + filename);
-                    startPolling(subject, filename, started.job_id);
+                    // Mark row as processing immediately.
+                    row.setAttribute("data-status", "processing");
+                    const statusCell = row.querySelector(".status-cell");
+                    if (statusCell) statusCell.innerHTML = statusBadge("processing");
+                    startPolling(subject, filename, jobId);
+                    activeProcessKeys.delete(key);
                 } catch (error) {
-                    showToast(error.message);
+                    let message = (error && error.message) ? error.message : "Processing failed.";
+                    if (error && error.status === 404) message = "PDF or subject not found (404).";
+                    else if (error && error.status === 401) message = "Session expired. Please log in again.";
+                    else if (error && error.status === 403) message = "You do not have permission to process this PDF.";
+                    else if (error && error.status === 409) message = filename + " is already being processed.";
+                    else if (error && error.status >= 500) message = "Server error while starting processing. Please try again.";
+                    else if (error && !error.status) message = "Network error. Could not reach the server.";
+                    showToast(message);
+                    if (error && error.status === 409) {
+                        // Try to resume polling using any job id returned.
+                        const jobId = error.data && (error.data.job_id || error.data.jobId);
+                        if (jobId) startPolling(subject, filename, jobId);
+                    }
                 } finally {
+                    activeProcessKeys.delete(key);
                     setButtonLoading(button, false);
                 }
             }
