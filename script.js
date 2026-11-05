@@ -1040,6 +1040,10 @@ document.addEventListener("DOMContentLoaded", function () {
             fetchPapers().catch(function () {});
         }
 
+        if (pageId === "teacher-pyqs" && pageLoaded.has(pageId) && typeof loadPdfList === "function") {
+            loadPdfList().catch(function () {});
+        }
+
         if (window.innerWidth < 1024) {
             document.body.classList.remove("nav-open");
 
@@ -2110,38 +2114,9 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    const activePollers = new Map();
+    const activePollers = new Map(); // keyed by jobId
+    const completedJobs = new Set(); // jobIds that have reached a terminal state
     const activeProcessKeys = new Set();
-
-    function pollerKey(subject, filename) {
-        return String(subject || "") + "::" + String(filename || "");
-    }
-
-    function stopPolling(subject, filename) {
-        let key;
-        if (filename === undefined) {
-            // Legacy single-arg call (filename only).
-            key = String(subject);
-            // Try to find a matching composite key.
-            for (const k of activePollers.keys()) {
-                if (k === key || k.endsWith("::" + key)) { key = k; break; }
-            }
-        } else {
-            key = pollerKey(subject, filename);
-        }
-        const timer = activePollers.get(key);
-        if (timer) {
-            clearInterval(timer);
-            activePollers.delete(key);
-        }
-    }
-
-    function stopAllPolling() {
-        activePollers.forEach(function (timer) {
-            clearInterval(timer);
-        });
-        activePollers.clear();
-    }
 
     function isTerminalJobStatus(status) {
         const normalized = String(status || "").trim().toLowerCase();
@@ -2150,67 +2125,131 @@ document.addEventListener("DOMContentLoaded", function () {
             normalized === "failed" || normalized === "error" || normalized === "errored";
     }
 
-    function startPolling(subject, filename, jobId) {
-        const key = pollerKey(subject, filename);
+    function findPollerJobId(subject, filename) {
+        for (const [jobId, entry] of activePollers.entries()) {
+            if (entry.subject === subject && entry.filename === filename) return jobId;
+        }
+        return null;
+    }
 
-        // Prevent duplicate timers / requests for the same document.
-        stopPolling(subject, filename);
+    function stopPollingJob(jobId) {
+        const entry = activePollers.get(jobId);
+        if (!entry) return;
+        if (entry.timer) clearTimeout(entry.timer);
+        activePollers.delete(jobId);
+    }
 
-        let settled = false;
+    function stopPolling(subject, filename) {
+        // Support stopPolling(jobId) legacy single-string calls.
+        if (filename === undefined && activePollers.has(subject)) {
+            stopPollingJob(subject);
+            return;
+        }
+        const jobId = findPollerJobId(subject, filename);
+        if (jobId) stopPollingJob(jobId);
+    }
 
-        const timer = setInterval(async function () {
-            if (settled) return;
-            let job;
+    function stopAllPolling() {
+        for (const jobId of Array.from(activePollers.keys())) {
+            stopPollingJob(jobId);
+        }
+    }
 
-            try {
-                job = await api("/jobs/" + encodeURIComponent(jobId));
-            } catch (error) {
-                settled = true;
-                stopPolling(subject, filename);
-                const row = document.querySelector(
-                    '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"][data-subject="' + window.CSS.escape(subject) + '"]'
-                ) || document.querySelector(
-                    '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"]'
-                );
-                if (row) {
-                    const cell = row.querySelector(".status-cell");
-                    if (cell) cell.innerHTML = statusBadge("failed");
-                }
-                showToast((error && error.message) ? error.message : "Could not poll job status.");
-                return;
-            }
+    function scheduleNextPoll(entry, delay) {
+        if (entry.stopped || entry.terminal) return;
+        entry.timer = setTimeout(function () {
+            pollJob(entry);
+        }, delay);
+    }
 
+    async function pollJob(entry) {
+        if (entry.stopped || entry.terminal) return;
+        if (entry.inFlight) return;
+        entry.inFlight = true;
+
+        let job = null;
+        let errored = false;
+        try {
+            job = await api("/jobs/" + encodeURIComponent(entry.jobId));
+        } catch (error) {
+            errored = true;
+            entry.terminal = true;
+            completedJobs.add(entry.jobId);
+            stopPollingJob(entry.jobId);
             const row = document.querySelector(
-                '#pyqTableBody tr[data-file="' + window.CSS.escape(filename) + '"]'
+                '#pyqTableBody tr[data-file="' + window.CSS.escape(entry.filename) + '"]'
             );
-
             if (row) {
                 const cell = row.querySelector(".status-cell");
-                if (cell) cell.innerHTML =
-                    statusBadge(job.status) +
-                    (job.stage ? " <small>" + escapeHTML(job.stage) + "</small>" : "");
+                if (cell) cell.innerHTML = statusBadge("failed");
+            }
+            showToast((error && error.message) ? error.message : "Could not poll job status.");
+        }
+
+        if (errored) {
+            entry.inFlight = false;
+            return;
+        }
+
+        const row = document.querySelector(
+            '#pyqTableBody tr[data-file="' + window.CSS.escape(entry.filename) + '"]'
+        );
+        if (row) {
+            const cell = row.querySelector(".status-cell");
+            if (cell) cell.innerHTML =
+                statusBadge(job.status) +
+                (job.stage ? " <small>" + escapeHTML(job.stage) + "</small>" : "");
+        }
+
+        if (isTerminalJobStatus(job.status)) {
+            entry.terminal = true;
+            completedJobs.add(entry.jobId);
+            stopPollingJob(entry.jobId);
+
+            if (String(job.status).toLowerCase() === "failed" ||
+                String(job.status).toLowerCase() === "error" ||
+                String(job.status).toLowerCase() === "errored") {
+                const errMsg = (job.error && String(job.error).trim())
+                    ? job.error : (job.message || "Processing failed.");
+                showToast(entry.filename + " failed: " + errMsg);
+            } else {
+                showToast(entry.filename + " processed successfully");
             }
 
-            if (isTerminalJobStatus(job.status)) {
-                settled = true;
-                stopPolling(subject, filename);
-
-                if (String(job.status).toLowerCase() === "failed" || String(job.status).toLowerCase() === "error" || String(job.status).toLowerCase() === "errored") {
-                    const errMsg = (job.error && String(job.error).trim()) ? job.error : (job.message || "Processing failed.");
-                    showToast(filename + " failed: " + errMsg);
-                } else {
-                    showToast(filename + " processed successfully");
-                }
-
-                // Refresh the PDF list for the correct subject when it matches the current view.
-                const currentSubject = document.getElementById("pyqSubject") ? document.getElementById("pyqSubject").value : "";
-                if (!currentSubject || currentSubject === subject) {
-                    loadPdfList().catch(function () {});
-                }
+            const currentSubject = document.getElementById("pyqSubject")
+                ? document.getElementById("pyqSubject").value : "";
+            if (!currentSubject || currentSubject === entry.subject) {
+                loadPdfList().catch(function () {});
             }
-        }, 2000);
+        } else {
+            // Adaptive backoff: 2s, 3s, 4s, ... capped at 8s.
+            entry.interval = Math.min((entry.interval || 2000) + 1000, 8000);
+            scheduleNextPoll(entry, entry.interval);
+        }
 
-        activePollers.set(key, timer);
+        entry.inFlight = false;
+    }
+
+    function startPolling(subject, filename, jobId) {
+        if (!jobId) return;
+        // Never poll jobs that already completed.
+        if (completedJobs.has(jobId)) return;
+        // Guarantee a single loop per job ID.
+        if (activePollers.has(jobId)) return;
+
+        const entry = {
+            jobId: jobId,
+            subject: subject,
+            filename: filename,
+            timer: null,
+            inFlight: false,
+            terminal: false,
+            stopped: false,
+            interval: 2000
+        };
+        activePollers.set(jobId, entry);
+        // First poll quickly.
+        scheduleNextPoll(entry, 1500);
     }
 
     function questionText(question) {
@@ -2246,8 +2285,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const action = button.getAttribute("data-action");
 
             if (action === "process") {
-                const key = pollerKey(subject, filename);
-                if (activePollers.has(key) || activeProcessKeys.has(key)) {
+                const key = subject + "::" + filename;
+                if (findPollerJobId(subject, filename) || activeProcessKeys.has(key)) {
                     showToast(filename + " is already being processed.");
                     return;
                 }
