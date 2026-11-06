@@ -803,8 +803,6 @@
 
                     <form id="generatePaperForm" novalidate>
 
-                        <div class="form-layout">
-
                             <div class="content-card">
 
                                 <div class="card-header">
@@ -990,8 +988,6 @@
                                 </div>
 
                             </div>
-
-                        </div>
 
 
                         <div class="generation-summary content-card">
@@ -1262,6 +1258,22 @@
 
                     </div>
 
+                    <section class="content-card" id="accountSettingsCard">
+                        <h2>Account Settings</h2>
+                        <p>Manage your account credentials.</p>
+
+                        <div class="account-settings-actions">
+                            <button type="button" class="btn btn-secondary account-settings-button" id="teacherOpenChangeEmail">
+                                <span>Change Email</span>
+                                <small>Update the email address used to sign in.</small>
+                            </button>
+                            <button type="button" class="btn btn-secondary account-settings-button" id="teacherOpenChangePassword">
+                                <span>Change Password</span>
+                                <small>Update your account password.</small>
+                            </button>
+                        </div>
+                    </section>
+
                     <section class="content-card totp-settings" data-totp-settings>
                         <h2>Authenticator app</h2>
 
@@ -1444,7 +1456,7 @@
                             <strong>Admin</strong>
 
                             <small>
-                                Switch access mode, approve and manage teacher accounts.
+                                Switch access mode, authorize and manage teacher accounts.
                             </small>
 
                         </button>
@@ -1531,7 +1543,7 @@
                     <div class="content-card" id="teacherManagementCard">
                         <h3>Teacher Management</h3>
                         <p class="access-mode-hint">
-                            Teacher records are managed from here. Approval, editing and removal follow the selected access mode.
+                            Teacher records are managed from here. Authorization, editing and removal follow the selected access mode.
                         </p>
 
                     <div class="filter-bar">
@@ -1544,46 +1556,47 @@
                         <select id="teacherStatusFilter">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="disapproved">Disapproved</option>
+                            <option value="approved">Authorized</option>
+                            <option value="disapproved">Unauthorized</option>
                         </select>
 
                     </div>
 
                     <div class="content-card table-card">
-
-                        <table>
-
+                        <table class="teacher-management-table">
+                            <colgroup>
+                                <col class="teacher-col-name">
+                                <col class="teacher-col-email">
+                                <col class="teacher-col-role">
+                                <col class="teacher-col-status">
+                                <col class="teacher-col-subjects">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>Teacher</th>
                                     <th>Email</th>
-                                    <th>Department</th>
                                     <th>Role</th>
                                     <th>Status</th>
                                     <th>Subjects</th>
-                                    <th>Actions</th>
                                 </tr>
                             </thead>
-
                             <tbody id="teachersTableBody">
-
                                 <tr>
-                                    <td colspan="7" class="state-cell">
-                                        Loading teachers…
+                                    <td colspan="5" class="state-cell">
+                                        <div class="empty-state loading">
+                                            <div class="spinner" aria-hidden="true"></div>
+                                            <p>Loading teachers…</p>
+                                        </div>
                                     </td>
                                 </tr>
-
                             </tbody>
-
                         </table>
+                    </div>
 
-                        <div id="teachersPagination" class="pagination-bar" aria-live="polite">
-                            <button type="button" class="btn btn-secondary small" id="teachersPrev">Previous</button>
-                            <span id="teachersPageInfo">—</span>
-                            <button type="button" class="btn btn-secondary small" id="teachersNext">Next</button>
-                        </div>
-
+                    <div id="teachersPagination" class="pagination-bar" aria-live="polite">
+                        <button type="button" class="btn btn-secondary small" id="teachersPrev">Previous</button>
+                        <span id="teachersPageInfo">—</span>
+                        <button type="button" class="btn btn-secondary small" id="teachersNext">Next</button>
                     </div>
                     </div>
 
@@ -1738,6 +1751,22 @@
 
                     </div>
 
+                    <section class="content-card" id="adminAccountSettingsCard">
+                        <h2>Account Settings</h2>
+                        <p>Manage your account credentials.</p>
+
+                        <div class="account-settings-actions">
+                            <button type="button" class="btn btn-secondary account-settings-button" id="adminOpenChangeEmail">
+                                <span>Change Email</span>
+                                <small>Update the email address used to sign in.</small>
+                            </button>
+                            <button type="button" class="btn btn-secondary account-settings-button" id="adminOpenChangePassword">
+                                <span>Change Password</span>
+                                <small>Update your account password.</small>
+                            </button>
+                        </div>
+                    </section>
+
                     <section class="content-card totp-settings" data-totp-settings>
                         <h2>Authenticator app</h2>
 
@@ -1792,6 +1821,13 @@
 
             </div>
 
+            <div id="pageAccessOverlay" class="page-access-overlay hidden" aria-live="assertive" role="alertdialog" aria-modal="true">
+                <div class="page-access-message">
+                    <h2>Access Restricted</h2>
+                    <p>You don't have permission to access this page. Please contact your administrator to request access.</p>
+                </div>
+            </div>
+
         </main>
 
     </div>
@@ -1800,30 +1836,20 @@
 
 
 <!-- CONFIRM DIALOG -->
-<dialog id="confirmDialog" class="modal">
-
-    <h3 id="confirmTitle">Confirm</h3>
-
-    <p id="confirmMessage"></p>
-
-    <div class="modal-actions">
-
-        <button
-            type="button"
-            class="btn btn-secondary"
-            id="confirmCancel">
-            Cancel
-        </button>
-
-        <button
-            type="button"
-            class="btn btn-danger"
-            id="confirmAccept">
-            Confirm
-        </button>
-
+<dialog id="confirmDialog" class="modal admin-dialog admin-confirm-dialog">
+    <div class="admin-dialog-shell">
+        <div class="admin-dialog-header">
+            <h3 id="confirmTitle">Confirm</h3>
+            <button type="button" class="btn btn-secondary small" data-close="confirmDialog" id="confirmHeaderClose">Close</button>
+        </div>
+        <div class="admin-dialog-body">
+            <p id="confirmMessage"></p>
+        </div>
+        <div class="modal-actions admin-dialog-footer">
+            <button type="button" class="btn btn-secondary" id="confirmCancel">Cancel</button>
+            <button type="button" class="btn btn-danger" id="confirmAccept">Confirm</button>
+        </div>
     </div>
-
 </dialog>
 
 
@@ -1852,64 +1878,181 @@
                     </div>
 
 
-<!-- TEACHER DIALOG -->
-<dialog id="teacherDialog" class="modal">
+<!-- RESET PASSWORD DIALOG -->
+<dialog id="resetPasswordDialog" class="modal admin-dialog admin-reset-password-dialog">
+    <div class="admin-dialog-shell">
+        <div class="admin-dialog-header">
+            <h3 id="resetPasswordDialogTitle">Reset Password</h3>
+            <button type="button" class="btn btn-secondary small" data-close="resetPasswordDialog">Close</button>
+        </div>
+        <form id="resetPasswordForm" class="admin-teacher-form" novalidate>
+            <div class="admin-dialog-body">
+                <p id="resetPasswordDialogUser"></p>
+                <div id="resetPasswordMessage" class="form-message" role="alert" aria-live="polite"></div>
+                <div class="form-group">
+                    <label for="resetNewPassword">New Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="resetNewPassword" autocomplete="new-password" minlength="8" required>
+                        <button type="button" class="password-toggle" id="toggleResetNewPassword">Show</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="resetConfirmNewPassword">Confirm New Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="resetConfirmNewPassword" autocomplete="new-password" minlength="8" required>
+                        <button type="button" class="password-toggle" id="toggleResetConfirmNewPassword">Show</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions admin-dialog-footer">
+                <button type="button" class="btn btn-secondary" data-close="resetPasswordDialog">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="resetPasswordButton">Reset Password</button>
+            </div>
+        </form>
+    </div>
+</dialog>
 
-    <h3 id="teacherDialogTitle">Add Teacher</h3>
 
-    <form id="teacherForm">
+<!-- PROFILE CHANGE EMAIL DIALOG -->
+<dialog id="profileChangeEmailModal" class="modal profile-account-modal">
+
+    <h3>Change Email Address</h3>
+
+    <div id="profileChangeEmailMessage" class="form-message" role="alert" aria-live="polite"></div>
+
+    <form id="profileChangeEmailForm" novalidate>
 
         <div class="form-group">
-            <label for="teacherName">Full name</label>
-            <input type="text" id="teacherName" required>
+            <label>Current Email</label>
+            <p id="profileChangeEmailCurrent" class="distribution-total">—</p>
         </div>
 
         <div class="form-group">
-            <label for="teacherEmail">Email</label>
-            <input type="email" id="teacherEmail" required>
+            <label for="profileNewEmail">New Email Address</label>
+            <input type="email" id="profileNewEmail" autocomplete="email" required>
         </div>
 
         <div class="form-group">
-            <label for="teacherDepartment">Department</label>
-            <input type="text" id="teacherDepartment" placeholder="CSE">
-        </div>
-
-        <div class="form-group">
-            <label for="teacherPassword">
-                Password <small>(leave blank to keep unchanged)</small>
-            </label>
-            <input type="password" id="teacherPassword"
-                   autocomplete="new-password" minlength="8">
-        </div>
-
-        <div class="form-group">
-            <label for="teacherStatus">Status</label>
-
-            <select id="teacherStatus">
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="disapproved">Disapproved</option>
-            </select>
+            <label for="profileConfirmNewEmail">Confirm New Email</label>
+            <input type="email" id="profileConfirmNewEmail" autocomplete="email" required>
         </div>
 
         <div class="modal-actions">
-
-            <button type="button"
-                    class="btn btn-secondary"
-                    data-close="teacherDialog">
-                Cancel
-            </button>
-
-            <button type="submit"
-                    class="btn btn-primary"
-                    id="teacherSaveButton">
-                Save Teacher
-            </button>
-
+            <button type="button" class="btn btn-secondary" data-close="profileChangeEmailModal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="profileChangeEmailButton">Change Email</button>
         </div>
 
     </form>
 
+</dialog>
+
+
+<!-- PROFILE CHANGE PASSWORD DIALOG -->
+<dialog id="profileChangePasswordModal" class="modal profile-account-modal">
+
+    <h3>Change Password</h3>
+
+    <div id="profileChangePasswordMessage" class="form-message" role="alert" aria-live="polite"></div>
+
+    <form id="profileChangePasswordForm" novalidate>
+
+        <div class="form-group">
+            <label for="profileCurrentPassword">Current Password</label>
+            <div class="password-wrapper">
+                <input type="password" id="profileCurrentPassword" autocomplete="current-password" required>
+                <button type="button" class="password-toggle" id="toggleProfileCurrentPassword">Show</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="profileNewPassword">New Password</label>
+            <div class="password-wrapper">
+                <input type="password" id="profileNewPassword" autocomplete="new-password" minlength="8" required>
+                <button type="button" class="password-toggle" id="toggleProfileNewPassword">Show</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="profileConfirmNewPassword">Confirm New Password</label>
+            <div class="password-wrapper">
+                <input type="password" id="profileConfirmNewPassword" autocomplete="new-password" minlength="8" required>
+                <button type="button" class="password-toggle" id="toggleProfileConfirmNewPassword">Show</button>
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" data-close="profileChangePasswordModal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="profileChangePasswordButton">Change Password</button>
+        </div>
+
+    </form>
+
+</dialog>
+
+
+<!-- TEACHER DIALOG -->
+<dialog id="teacherDialog" class="modal admin-dialog admin-teacher-dialog">
+    <div class="admin-dialog-header">
+        <h3 id="teacherDialogTitle">Add Teacher</h3>
+        <button type="button" class="btn btn-secondary small" data-close="teacherDialog">Close</button>
+    </div>
+    <form id="teacherForm" class="admin-teacher-form-simple" novalidate>
+        <div class="admin-dialog-body">
+            <div id="teacherFormMessage" class="form-message" role="alert" aria-live="polite"></div>
+            <div class="admin-teacher-form-grid">
+                <div class="form-group">
+                    <label for="teacherName">Teacher name</label>
+                    <input type="text" id="teacherName" required placeholder="e.g. Dr. Jane Smith">
+                    <span class="field-error" id="teacherNameError"></span>
+                </div>
+                <div class="form-group">
+                    <label for="teacherEmail">Email address</label>
+                    <input type="email" id="teacherEmail" required placeholder="e.g. jsmith@university.edu">
+                    <span class="field-error" id="teacherEmailError"></span>
+                </div>
+                <div class="form-group">
+                    <label for="teacherPassword">Password <small>(leave blank to keep unchanged)</small></label>
+                    <input type="password" id="teacherPassword" autocomplete="new-password" minlength="8" placeholder="••••••••">
+                    <span class="field-error" id="teacherPasswordError"></span>
+                </div>
+                <div class="form-group">
+                    <label for="teacherStatus">Account status</label>
+                    <select id="teacherStatus">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Authorized</option>
+                        <option value="disapproved">Unauthorized</option>
+                    </select>
+                    <span class="field-error" id="teacherStatusError"></span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-actions admin-dialog-footer">
+            <button type="button" class="btn btn-secondary" data-close="teacherDialog">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="teacherSaveButton">Save Teacher</button>
+        </div>
+    </form>
+</dialog>
+
+
+
+<!-- SUBJECT ASSIGNMENTS & PERMISSIONS DIALOG -->
+<dialog id="subjectAssignmentModal" class="modal admin-dialog admin-assignment-dialog">
+    <div class="admin-dialog-shell">
+        <div class="admin-dialog-header">
+            <div>
+                <h3 id="subjectAssignmentModalTitle">Subject Assignments &amp; Permissions</h3>
+                <p id="assignmentTeacherInfo">Assign subjects and permissions</p>
+            </div>
+            <button type="button" class="btn btn-secondary small" data-close="subjectAssignmentModal" id="closeAssignmentModal">Close</button>
+        </div>
+        <div id="assignmentContent" class="admin-dialog-body assignment-content">
+            <p>Loading subjects and assignments…</p>
+        </div>
+        <div class="modal-actions admin-dialog-footer">
+            <button type="button" class="btn btn-secondary" data-close="subjectAssignmentModal" id="cancelAssignment">Cancel</button>
+            <button type="button" class="btn btn-primary" id="saveAssignment">Save Assignments</button>
+        </div>
+    </div>
 </dialog>
 
 

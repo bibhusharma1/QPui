@@ -120,18 +120,34 @@ function hasSessionFor(t) {
 
 // reachability probe (no-cors, short timeout)
 function probeBackend(base, timeoutMs) {
+    // Try a few endpoints so a blocked /health request does not falsely mark
+    // a reachable backend as down. Any HTTP response (opaque included) counts
+    // as reachable; only a network-level failure counts as unreachable.
+    const endpoints = ["/health", "/", "/docs"];
     return new Promise(function (resolve) {
-        let ctrl = null;
-        try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
-        const timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, timeoutMs || 3000);
-        try {
-            fetch(base + "/health", { method: "GET", mode: "no-cors", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
-                .then(function () { clearTimeout(timer); resolve(true); })
-                .catch(function () { clearTimeout(timer); resolve(false); });
-        } catch (e) {
-            clearTimeout(timer);
-            resolve(false);
+        let finished = false;
+        let attempts = 0;
+        function finish(value) {
+            if (finished) return;
+            finished = true;
+            resolve(value);
         }
+        endpoints.forEach(function (path) {
+            if (finished) return;
+            let ctrl = null;
+            try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+            const timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, timeoutMs || 3000);
+            attempts += 1;
+            try {
+                fetch(base + path, { method: "GET", mode: "no-cors", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+                    .then(function () { clearTimeout(timer); finish(true); })
+                    .catch(function () { clearTimeout(timer); attempts -= 1; if (attempts <= 0) finish(false); });
+            } catch (e) {
+                clearTimeout(timer);
+                attempts -= 1;
+                if (attempts <= 0) finish(false);
+            }
+        });
     });
 }
 
@@ -142,13 +158,33 @@ let backendInitPromise = (async function () {
         updateBackendSelectorUI();
         return;
     }
-    // If an active session exists, keep its target (avoid switching mid-session).
+    // If an active session exists, prefer its target, but switch to the other
+    // backend if it is unavailable and the other one is reachable.
     if (hasSessionFor("local") || hasSessionFor("production")) {
         if (!hasSessionFor(activeBackendTarget)) {
             activeBackendTarget = hasSessionFor("local") ? "local" : "production";
             API_BASE = targetToBase(activeBackendTarget);
         }
+        const activeReachable = await probeBackend(API_BASE, 3000);
+        if (!activeReachable) {
+            const other = (activeBackendTarget === "local") ? "production" : "local";
+            // On deployed UI, never switch to localhost unless reachable.
+            const allowOther = !(other === "local" && !isLocalDevHost());
+            if (allowOther) {
+                const otherReachable = await probeBackend(targetToBase(other), 3000);
+                if (otherReachable) {
+                    activeBackendTarget = other;
+                    API_BASE = targetToBase(other);
+                    try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
+                    clearSession();
+                    updateBackendSelectorUI();
+                    if (typeof window !== "undefined") window.location.reload();
+                    return;
+                }
+            }
+        }
         try { localStorage.setItem(BACKEND_TARGET_KEY, activeBackendTarget); } catch (e) {}
+        console.log("[QPG] Selected backend:", activeBackendTarget, API_BASE);
         updateBackendSelectorUI();
         return;
     }
@@ -161,23 +197,29 @@ let backendInitPromise = (async function () {
         activeBackendTarget = preferred;
     } else {
         const other = (preferred === "local") ? "production" : "local";
-        // On deployed UI, do not switch to localhost unless genuinely reachable.
-        if (!(other === "local" && !isLocalDevHost())) {
+        // On localhost UI, production is the documented fallback; do not require
+        // a successful probe (browser extensions may block it) before using it.
+        if (other === "production" && isLocalDevHost()) {
+            activeBackendTarget = other;
+        } else if (!(other === "local" && !isLocalDevHost())) {
             const otherReachable = await probeBackend(targetToBase(other), 3000);
             if (otherReachable) activeBackendTarget = other;
         }
     }
     API_BASE = targetToBase(activeBackendTarget);
     try { localStorage.setItem(BACKEND_TARGET_KEY, activeBackendTarget); } catch (e) {}
+    console.log("[QPG] Selected backend:", activeBackendTarget, API_BASE);
     updateBackendSelectorUI();
 })();
 
 // Fallback coordination
 let backendSwitchCooldownUntil = 0;
+let backendSwitchInProgress = false;
 
 function tryFallbackBackend() {
     const now = Date.now();
-    if (now < backendSwitchCooldownUntil) return false;
+    if (backendSwitchInProgress || now < backendSwitchCooldownUntil) return false;
+    backendSwitchInProgress = true;
     backendSwitchCooldownUntil = now + 60000;
     const other = (activeBackendTarget === "local") ? "production" : "local";
     // Never fall back to localhost on deployed UI unless reachable (probe synchronously-ish via cached? attempt)
@@ -185,28 +227,34 @@ function tryFallbackBackend() {
     API_BASE = targetToBase(other);
     try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
     clearSession();
+    backendSwitchInProgress = false;
     return true;
 }
 
 async function handleBackendFailureAndMaybeSwitch() {
     const now = Date.now();
-    if (now < backendSwitchCooldownUntil) return false;
+    if (backendSwitchInProgress || now < backendSwitchCooldownUntil) return false;
+    backendSwitchInProgress = true;
     backendSwitchCooldownUntil = now + 60000;
-    const other = (activeBackendTarget === "local") ? "production" : "local";
-    // deployed UI: don't switch to local unless reachable
-    if (other === "local" && !isLocalDevHost()) {
-        const r = await probeBackend(LOCAL_API_BASE, 2000);
-        if (!r) return false;
-    } else {
-        const r = await probeBackend(targetToBase(other), 2000);
-        if (!r) return false;
+    try {
+        const other = (activeBackendTarget === "local") ? "production" : "local";
+        // deployed UI: don't switch to local unless reachable
+        if (other === "local" && !isLocalDevHost()) {
+            const r = await probeBackend(LOCAL_API_BASE, 2000);
+            if (!r) return false;
+        } else {
+            const r = await probeBackend(targetToBase(other), 2000);
+            if (!r) return false;
+        }
+        activeBackendTarget = other;
+        API_BASE = targetToBase(other);
+        try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
+        clearSession();
+        console.log("[QPG] Switched backend to", activeBackendTarget, API_BASE, "reason: network failure");
+        return true;
+    } finally {
+        backendSwitchInProgress = false;
     }
-    activeBackendTarget = other;
-    API_BASE = targetToBase(other);
-    try { localStorage.setItem(BACKEND_TARGET_KEY, other); } catch (e) {}
-    clearSession();
-    if (typeof window !== "undefined") window.location.reload();
-    return true;
 }
 
 function updateBackendSelectorUI() {
@@ -271,6 +319,9 @@ function redactHeaders(headers) {
 }
 
 async function apiRequest(path, options = {}) {
+    // Ensure backend auto-detection has finished before issuing any request,
+    // so a stale (unreachable) backend URL is never used.
+    try { await backendInitPromise; } catch (e) {}
     const headers = { ...(options.headers || {}) };
     const __startedAt = (typeof performance !== "undefined" ? performance.now() : Date.now());
     try {
@@ -300,16 +351,21 @@ async function apiRequest(path, options = {}) {
         const fetchOptions = { ...options, headers };
         delete fetchOptions.authToken;
         delete fetchOptions.skipAuth;
+        delete fetchOptions.__retried;
         response = await fetch(API_BASE + path, fetchOptions);
     } catch (error) {
-        // Attempt fallback backend on network failure.
-        try {
-            const switched = await handleBackendFailureAndMaybeSwitch();
-            if (switched) {
-                throw new Error("Backend switched to " + API_BASE + ". Please retry.");
+        // Attempt fallback backend on network failure, then retry once.
+        if (!options.__retried) {
+            try {
+                const switched = await handleBackendFailureAndMaybeSwitch();
+                if (switched) {
+                    const retryOptions = { ...options, __retried: true };
+                    delete retryOptions.headers;
+                    return apiRequest(path, retryOptions);
+                }
+            } catch (e) {
+                /* fall through to network error */
             }
-        } catch (e) {
-            if (e && e.message && e.message.indexOf("Backend switched") !== -1) throw e;
         }
         throw new Error("Cannot reach server at " + API_BASE);
     }
@@ -756,6 +812,8 @@ document.addEventListener("DOMContentLoaded", function () {
             adminWelcomeName: name,
             profileName: name,
             profileEmail: email,
+            changeEmailCurrent: email,
+            adminChangeEmailCurrent: email,
             profileDepartment: currentUser?.department || "—",
             profileStatus: currentUser?.status || "—",
             adminProfileName: name,
@@ -925,6 +983,28 @@ document.addEventListener("DOMContentLoaded", function () {
         return preferred || pages[0];
     }
 
+    function showPageAccessRestriction() {
+        const pc = document.getElementById("pageContent");
+        const overlay = document.getElementById("pageAccessOverlay");
+        if (pc) {
+            pc.classList.add("page-restricted");
+            try { pc.setAttribute("inert", ""); } catch (e) {}
+        }
+        if (overlay) overlay.classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+    }
+
+    function hidePageAccessRestriction() {
+        const pc = document.getElementById("pageContent");
+        const overlay = document.getElementById("pageAccessOverlay");
+        if (pc) {
+            pc.classList.remove("page-restricted");
+            try { pc.removeAttribute("inert"); } catch (e) {}
+        }
+        if (overlay) overlay.classList.add("hidden");
+        document.body.style.overflow = "";
+    }
+
     function navigateToPage(pageId, options) {
         const settings = options || {};
         const route = routeByPage[pageId];
@@ -947,6 +1027,7 @@ document.addEventListener("DOMContentLoaded", function () {
             showLoginPage();
             return;
         }
+        hidePageAccessRestriction();
 
         // Check permissions for teachers
         if (!isAdminUser()) {
@@ -969,8 +1050,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (pageId === "teacher-generate") {
                     const hasPerm = Object.values(perms).some(p => p && p.generate);
                     if (!hasPerm && Object.keys(perms).length > 0) {
-                        showToast("You don't have permission to generate question papers.");
-                        return navigateToPage("teacher-dashboard");
+                        window.__restrictGeneratePage = true;
+                    } else {
+                        window.__restrictGeneratePage = false;
                     }
                 }
             } catch (e) {}
@@ -1000,6 +1082,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         selectedPage.classList.remove("hidden");
+        if (pageId === "teacher-generate" && window.__restrictGeneratePage) {
+            showPageAccessRestriction();
+        }
         selectedPage.querySelectorAll("[data-totp-settings]").forEach(function (container) {
             loadTotpStatus(container);
         });
@@ -1029,7 +1114,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const loader = pageLoaders[pageId];
 
-        if (loader && !pageLoaded.has(pageId)) {
+        if (pageId === "teacher-generate" && window.__restrictGeneratePage) {
+            // Keep the page visible but frozen; do not load generation data.
+        } else if (loader && !pageLoaded.has(pageId)) {
             pageLoaded.add(pageId);
             Promise.resolve(loader()).catch(function (error) {
                 pageLoaded.delete(pageId);
@@ -1414,8 +1501,12 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (loginMessage) loginMessage.textContent = error.message;
                     }
                 } else if (error.status === 401) {
-                    // Combined message — never hints whether the email exists.
-                    if (loginMessage) loginMessage.textContent = "Invalid email or password.";
+                    // Surface the backend's detail when it distinguishes pending or
+                    // unauthorized accounts; fall back to a generic combined message.
+                    const detail = (error && typeof error.message === "string" && error.message.trim())
+                        ? error.message.trim()
+                        : "Invalid email or password.";
+                    if (loginMessage) loginMessage.textContent = detail;
                     hideTotpField();
                 } else {
                     if (loginMessage) loginMessage.textContent = error.message;
@@ -2508,6 +2599,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const dialog = document.getElementById("confirmDialog");
             const accept = document.getElementById("confirmAccept");
             const cancel = document.getElementById("confirmCancel");
+            const headerClose = document.getElementById("confirmHeaderClose");
 
             if (!dialog || typeof dialog.showModal !== "function") {
                 resolve(window.confirm(message));
@@ -2518,9 +2610,18 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("confirmMessage").textContent = message || "";
             accept.textContent = confirmLabel || "Confirm";
 
+            if (confirmLabel === "Authorize") {
+                accept.className = "btn btn-primary";
+            } else if (confirmLabel === "Remove" || confirmLabel === "Unauthorize") {
+                accept.className = "btn btn-danger";
+            } else {
+                accept.className = "btn btn-primary";
+            }
+
             function cleanup() {
                 accept.removeEventListener("click", onAccept);
                 cancel.removeEventListener("click", onCancel);
+                if (headerClose) headerClose.removeEventListener("click", onCancel);
                 dialog.removeEventListener("close", onDialogClose);
             }
             function onAccept() { cleanup(); dialog.close(); resolve(true); }
@@ -2529,6 +2630,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             accept.addEventListener("click", onAccept);
             cancel.addEventListener("click", onCancel);
+            if (headerClose) headerClose.addEventListener("click", onCancel);
             dialog.addEventListener("close", onDialogClose);
 
             dialog.showModal();
@@ -2566,15 +2668,18 @@ document.addEventListener("DOMContentLoaded", function () {
     ============================================== */
 
     let teachersCache = [];
+    let resetPasswordTargetId = null;
+    let resetPasswordTargetName = "";
+    let resetPasswordTargetEmail = "";
     let editingTeacherId = null;
     let teachersPage = 1;
     const teachersPageSize = 50;
 
     function teacherStatusBadge(status) {
         const map = {
-            approved: ["approved", "Approved"],
+            approved: ["approved", "Authorized"],
             pending: ["pending", "Pending"],
-            disapproved: ["disapproved", "Disapproved"]
+            disapproved: ["disapproved", "Unauthorized"]
         };
 
         const entry = map[status] || ["pending", status || "Unknown"];
@@ -2597,15 +2702,16 @@ document.addEventListener("DOMContentLoaded", function () {
         params.set("page", String(teachersPage));
         params.set("page_size", String(teachersPageSize));
 
-        tbody.innerHTML = tableStateHTML("⟳", "Loading teachers…", "loading", 7);
+        teachersCache = [];
+        tbody.innerHTML = tableStateHTML("⟳", "Loading teachers…", "loading", 5);
 
         let data;
 
         try {
-            data = await api("/teachers?" + params.toString());
+            data = await api("/teachers?" + params.toString() + "&_=" + Date.now(), { cache: "no-store" });
         } catch (error) {
             tbody.innerHTML = tableStateHTML("⚠",
-                "Could not load teachers: " + error.message, "error", 7);
+                "Could not load teachers: " + error.message, "error", 5);
             updateTeachersPagination(0);
             return;
         }
@@ -2616,33 +2722,40 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (!teachersCache.length) {
             tbody.innerHTML = tableStateHTML("♙",
-                "No teachers found. Add one with the button above.", "", 7);
+                "No teachers found. Add one with the button above.", "", 5);
             return;
         }
 
         tbody.innerHTML = teachersCache.map(function (teacher) {
+            const id = escapeHTML(teacher.id);
             let actions = "";
-
             if (teacher.status !== "approved") {
-                actions += '<button class="table-action" data-teacher-action="approve" data-id="' + teacher.id + '">Approve</button> ';
+                actions += '<button type="button" class="table-action" data-teacher-action="authorize" data-id="' + id + '">Authorize</button>';
             }
-
             if (teacher.status !== "disapproved") {
-                actions += '<button class="table-action" data-teacher-action="disapprove" data-id="' + teacher.id + '">Disapprove</button> ';
+                actions += '<button type="button" class="table-action" data-teacher-action="unauthorize" data-id="' + id + '">Unauthorize</button>';
             }
+            actions += '<button type="button" class="table-action" data-teacher-action="assign" data-id="' + id + '">Assign Subjects</button>' +
+                '<button type="button" class="table-action" data-teacher-action="edit" data-id="' + id + '">Edit</button>' +
+                '<button type="button" class="table-action danger" data-teacher-action="remove" data-id="' + id + '">Remove</button>' +
+                '<button type="button" class="table-action" data-teacher-action="reset-password" data-id="' + id + '">Change Password</button>';
 
-            actions += '<button class="table-action" data-teacher-action="assign" data-id="' + teacher.id + '">Assign Subjects</button> ' +
-                '<button class="table-action" data-teacher-action="edit" data-id="' + teacher.id + '">Edit</button> ' +
-                '<button class="table-action danger" data-teacher-action="remove" data-id="' + teacher.id + '">Remove</button>';
-
-            return "<tr>" +
-                "<td>" + escapeHTML(teacher.name) + "</td>" +
-                "<td>" + escapeHTML(teacher.email) + "</td>" +
-                "<td>" + escapeHTML(teacher.department || "—") + "</td>" +
-                "<td>" + escapeHTML(teacher.role || "—") + "</td>" +
-                "<td>" + teacherStatusBadge(teacher.status) + "</td>" +
-                "<td>" + (teacher.subject_count ?? "—") + "</td>" +
-                '<td class="actions-cell">' + actions + "</td></tr>";
+            const name = escapeHTML(teacher.name || "—");
+            const email = escapeHTML(teacher.email || "—");
+            const role = escapeHTML(teacher.role || "—");
+            const subjectCount = escapeHTML(teacher.subject_count ?? "—");
+            return '<tr class="teacher-info-row">' +
+                '<td class="teacher-cell-name">' + name + '</td>' +
+                '<td class="teacher-cell-email">' + email + '</td>' +
+                '<td class="teacher-cell-role">' + role + '</td>' +
+                '<td class="teacher-cell-status">' + teacherStatusBadge(teacher.status) + '</td>' +
+                '<td class="teacher-cell-subjects">' + subjectCount + '</td>' +
+            '</tr>' +
+            '<tr class="teacher-actions-row">' +
+                '<td colspan="5">' +
+                    '<div class="teacher-actions" aria-label="Actions for ' + name + '">' + actions + '</div>' +
+                '</td>' +
+            '</tr>';
         }).join("");
     }
 
@@ -2662,6 +2775,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const title = document.getElementById("teacherDialogTitle");
         if (title) title.textContent = teacher ? "Edit Teacher" : "Add Teacher";
 
+        const saveBtn = document.getElementById("teacherSaveButton");
+        if (saveBtn) saveBtn.textContent = teacher ? "Save Changes" : "Save Teacher";
+
         const setValue = function (id, value) {
             const element = document.getElementById(id);
             if (element) element.value = value || "";
@@ -2669,10 +2785,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         setValue("teacherName", teacher ? teacher.name : "");
         setValue("teacherEmail", teacher ? teacher.email : "");
-        setValue("teacherDepartment", teacher ? teacher.department : "");
-        setValue("teacherPassword", "");
+        setValue("teacherPassword", teacher ? "" : "admin@123");
         setValue("teacherStatus", teacher ? (teacher.status || "pending") : "pending");
 
+        clearTeacherFormErrors();
         openModal("teacherDialog");
     }
 
@@ -2684,24 +2800,58 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    let teacherFormSubmitting = false;
+
+    function clearTeacherFormErrors() {
+        ["teacherName", "teacherEmail", "teacherPassword", "teacherStatus"].forEach(function (field) {
+            const input = document.getElementById(field);
+            if (input) input.classList.remove("input-error");
+            const err = document.getElementById(field + "Error");
+            if (err) err.textContent = "";
+        });
+        const msg = document.getElementById("teacherFormMessage");
+        if (msg) { msg.textContent = ""; msg.className = "form-message"; }
+    }
+
+    function showTeacherFormError(message) {
+        const msg = document.getElementById("teacherFormMessage");
+        if (msg) { msg.textContent = message || "Registration failed."; msg.className = "form-message error"; }
+    }
+
+    function applyTeacherFieldError(field, message) {
+        const input = document.getElementById(field);
+        const err = document.getElementById(field + "Error");
+        if (input) input.classList.add("input-error");
+        if (err) err.textContent = message || "Invalid value.";
+    }
+
     const teacherForm = document.getElementById("teacherForm");
 
     if (teacherForm) {
         teacherForm.addEventListener("submit", async function (event) {
             event.preventDefault();
+            if (teacherFormSubmitting) return;
 
-            const body = {
-                name: document.getElementById("teacherName").value.trim(),
-                email: document.getElementById("teacherEmail").value.trim(),
-                department: document.getElementById("teacherDepartment").value.trim(),
-                status: document.getElementById("teacherStatus").value
-            };
+            clearTeacherFormErrors();
 
+            const name = document.getElementById("teacherName").value.trim();
+            const email = document.getElementById("teacherEmail").value.trim();
             const password = document.getElementById("teacherPassword").value;
+            const status = document.getElementById("teacherStatus").value;
 
+            if (!name || !email) {
+                if (!name) applyTeacherFieldError("teacherName", "Teacher name is required.");
+                if (!email) applyTeacherFieldError("teacherEmail", "Email address is required.");
+                showTeacherFormError("Please correct the highlighted fields.");
+                return;
+            }
+
+            const body = { name: name, email: email, status: status };
+            // Default password when left blank on create.
             if (password) body.password = password;
-            if (!body.name || !body.email) return;
+            else if (!editingTeacherId) body.password = "admin@123";
 
+            teacherFormSubmitting = true;
             setButtonLoading(document.getElementById("teacherSaveButton"), true, "Saving…");
 
             try {
@@ -2716,11 +2866,250 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 closeModal("teacherDialog");
+                clearTeacherFormErrors();
                 loadTeachers().catch(function () {});
             } catch (error) {
-                showToast(error.message);
+                const data = error && error.data ? error.data : null;
+                const detail = data && data.detail ? data.detail : null;
+                let handled = false;
+
+                if (Array.isArray(detail)) {
+                    detail.forEach(function (item) {
+                        const loc = Array.isArray(item.loc) ? item.loc : [];
+                        const field = String(loc[loc.length - 1] || "").toLowerCase();
+                        const msg = item.msg || item.message || "Invalid value.";
+                        if (field === "email") { applyTeacherFieldError("teacherEmail", msg); handled = true; }
+                        else if (field === "password") { applyTeacherFieldError("teacherPassword", msg); handled = true; }
+                        else if (field === "name") { applyTeacherFieldError("teacherName", msg); handled = true; }
+                        else if (field === "status") { applyTeacherFieldError("teacherStatus", msg); handled = true; }
+                    });
+                } else if (typeof detail === "string") {
+                    const lower = detail.toLowerCase();
+                    if (lower.includes("email")) applyTeacherFieldError("teacherEmail", detail);
+                    else if (lower.includes("password")) applyTeacherFieldError("teacherPassword", detail);
+                    else showTeacherFormError(detail);
+                    handled = true;
+                }
+
+                if (!handled) {
+                    showTeacherFormError((error && error.message) ? error.message : "Registration failed. Please try again.");
+                } else {
+                    const anyFieldError = ["teacherName", "teacherEmail", "teacherPassword", "teacherStatus"].some(function (f) {
+                        const e = document.getElementById(f + "Error");
+                        return e && e.textContent;
+                    });
+                    if (!anyFieldError) showTeacherFormError((error && error.message) ? error.message : "Registration failed. Please try again.");
+                }
             } finally {
+                teacherFormSubmitting = false;
                 setButtonLoading(document.getElementById("teacherSaveButton"), false);
+            }
+        });
+    }
+
+    /* =============================================
+       PROFILE ACCOUNT SETTINGS MODALS
+    ============================================== */
+
+    function setPasswordMessage(id, text, type) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = "form-message" + (type ? " " + type : "");
+    }
+
+    function setupPasswordToggle(toggleId, inputId) {
+        const toggle = document.getElementById(toggleId);
+        const input = document.getElementById(inputId);
+        if (!toggle || !input) return;
+        toggle.addEventListener("click", function () {
+            if (input.type === "password") {
+                input.type = "text";
+                toggle.textContent = "Hide";
+            } else {
+                input.type = "password";
+                toggle.textContent = "Show";
+            }
+        });
+    }
+
+    setupPasswordToggle("toggleProfileCurrentPassword", "profileCurrentPassword");
+    setupPasswordToggle("toggleProfileNewPassword", "profileNewPassword");
+    setupPasswordToggle("toggleProfileConfirmNewPassword", "profileConfirmNewPassword");
+    setupPasswordToggle("toggleResetNewPassword", "resetNewPassword");
+    setupPasswordToggle("toggleResetConfirmNewPassword", "resetConfirmNewPassword");
+
+    function isValidEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+    }
+
+    function clearProfilePasswordFields() {
+        ["profileCurrentPassword", "profileNewPassword", "profileConfirmNewPassword"].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) el.value = "";
+        });
+    }
+
+    function openProfileChangeEmail() {
+        const cur = document.getElementById("profileChangeEmailCurrent");
+        if (cur) cur.textContent = (currentUser && currentUser.email) ? currentUser.email : "—";
+        const msg = document.getElementById("profileChangeEmailMessage");
+        if (msg) { msg.textContent = ""; msg.className = "form-message"; }
+        const newE = document.getElementById("profileNewEmail");
+        const confE = document.getElementById("profileConfirmNewEmail");
+        if (newE) newE.value = "";
+        if (confE) confE.value = "";
+        openModal("profileChangeEmailModal");
+    }
+
+    function openProfileChangePassword() {
+        const msg = document.getElementById("profileChangePasswordMessage");
+        if (msg) { msg.textContent = ""; msg.className = "form-message"; }
+        clearProfilePasswordFields();
+        openModal("profileChangePasswordModal");
+    }
+
+    ["teacherOpenChangeEmail", "adminOpenChangeEmail"].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener("click", openProfileChangeEmail);
+    });
+
+    ["teacherOpenChangePassword", "adminOpenChangePassword"].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener("click", openProfileChangePassword);
+    });
+
+    const profileChangeEmailForm = document.getElementById("profileChangeEmailForm");
+    if (profileChangeEmailForm) {
+        profileChangeEmailForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const newEmail = document.getElementById("profileNewEmail").value.trim();
+            const confirmEmail = document.getElementById("profileConfirmNewEmail").value.trim();
+            const msgId = "profileChangeEmailMessage";
+
+            if (!newEmail || !confirmEmail) {
+                setPasswordMessage(msgId, "Please fill in all email fields.", "error");
+                return;
+            }
+            if (!isValidEmail(newEmail) || !isValidEmail(confirmEmail)) {
+                setPasswordMessage(msgId, "Please enter a valid email address.", "error");
+                return;
+            }
+            if (newEmail.toLowerCase() !== confirmEmail.toLowerCase()) {
+                setPasswordMessage(msgId, "Email addresses do not match.", "error");
+                return;
+            }
+
+            setButtonLoading(document.getElementById("profileChangeEmailButton"), true, "Saving…");
+            try {
+                const response = await api("/auth/change-email", {
+                    method: "POST",
+                    body: { new_email: newEmail, confirm_email: confirmEmail }
+                });
+                if (response && response.access_token) {
+                    setToken(response.access_token);
+                }
+                if (currentUser) {
+                    currentUser.email = (response && response.email) ? response.email : newEmail;
+                }
+                updateUserUI();
+                setPasswordMessage(msgId, "Email changed successfully.", "success");
+                document.getElementById("profileNewEmail").value = "";
+                document.getElementById("profileConfirmNewEmail").value = "";
+                showToast("Email changed successfully.");
+                closeModal("profileChangeEmailModal");
+            } catch (error) {
+                setPasswordMessage(msgId, error.message, "error");
+            } finally {
+                setButtonLoading(document.getElementById("profileChangeEmailButton"), false);
+            }
+        });
+    }
+
+    const profileChangePasswordForm = document.getElementById("profileChangePasswordForm");
+    if (profileChangePasswordForm) {
+        profileChangePasswordForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const current = document.getElementById("profileCurrentPassword").value;
+            const next = document.getElementById("profileNewPassword").value;
+            const confirm = document.getElementById("profileConfirmNewPassword").value;
+            const msgId = "profileChangePasswordMessage";
+
+            if (!current || !next || !confirm) {
+                setPasswordMessage(msgId, "Please fill in all password fields.", "error");
+                return;
+            }
+            if (next.length < 8) {
+                setPasswordMessage(msgId, "New password must be at least 8 characters.", "error");
+                return;
+            }
+            if (next !== confirm) {
+                setPasswordMessage(msgId, "New passwords do not match.", "error");
+                return;
+            }
+
+            setButtonLoading(document.getElementById("profileChangePasswordButton"), true, "Saving…");
+            try {
+                await api("/auth/change-password", {
+                    method: "POST",
+                    body: { current_password: current, new_password: next, confirm_password: confirm }
+                });
+                setPasswordMessage(msgId, "Password changed successfully.", "success");
+                clearProfilePasswordFields();
+                showToast("Password changed successfully.");
+                closeModal("profileChangePasswordModal");
+            } catch (error) {
+                setPasswordMessage(msgId, error.message, "error");
+            } finally {
+                setButtonLoading(document.getElementById("profileChangePasswordButton"), false);
+            }
+        });
+    }
+
+    const profileChangePasswordModal = document.getElementById("profileChangePasswordModal");
+    if (profileChangePasswordModal) {
+        profileChangePasswordModal.addEventListener("close", clearProfilePasswordFields);
+    }
+
+    const resetPasswordForm = document.getElementById("resetPasswordForm");
+    if (resetPasswordForm) {
+        resetPasswordForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const next = document.getElementById("resetNewPassword").value;
+            const confirm = document.getElementById("resetConfirmNewPassword").value;
+
+            if (!next || !confirm) {
+                setPasswordMessage("resetPasswordMessage", "Please fill in all password fields.", "error");
+                return;
+            }
+            if (next.length < 8) {
+                setPasswordMessage("resetPasswordMessage", "New password must be at least 8 characters.", "error");
+                return;
+            }
+            if (next !== confirm) {
+                setPasswordMessage("resetPasswordMessage", "Passwords do not match.", "error");
+                return;
+            }
+            if (!resetPasswordTargetId) {
+                setPasswordMessage("resetPasswordMessage", "No user selected.", "error");
+                return;
+            }
+
+            setButtonLoading(document.getElementById("resetPasswordButton"), true, "Resetting…");
+            try {
+                await api("/users/" + resetPasswordTargetId + "/reset-password", {
+                    method: "POST",
+                    body: { new_password: next }
+                });
+                setPasswordMessage("resetPasswordMessage", "Password reset successfully.", "success");
+                document.getElementById("resetNewPassword").value = "";
+                document.getElementById("resetConfirmNewPassword").value = "";
+                showToast("Password reset for " + (resetPasswordTargetName || "user") + ".");
+                closeModal("resetPasswordDialog");
+            } catch (error) {
+                setPasswordMessage("resetPasswordMessage", error.message, "error");
+            } finally {
+                setButtonLoading(document.getElementById("resetPasswordButton"), false);
             }
         });
     }
@@ -2739,14 +3128,23 @@ document.addEventListener("DOMContentLoaded", function () {
                 return String(item.id) === id;
             });
 
-            if (action === "approve" || action === "disapprove") {
-                const status = action === "approve" ? "approved" : "disapproved";
+            if (action === "authorize" || action === "unauthorize") {
+                const status = action === "authorize" ? "approved" : "disapproved";
+                const verb = action === "authorize" ? "Authorize" : "Unauthorize";
+                const statusLabel = action === "authorize" ? "authorized" : "unauthorized";
+                const ok = await confirmAction(
+                    verb + " teacher",
+                    (action === "authorize" ? "Authorize " : "Unauthorize ") +
+                    (teacher ? "\"" + teacher.name + "\"" : "this teacher") + "?",
+                    verb
+                );
+                if (!ok) return;
 
                 try {
                     await api("/teachers/" + id, {
                         method: "PATCH", body: { status: status }
                     });
-                    showToast((teacher ? teacher.name : "Teacher") + " " + status);
+                    showToast((teacher ? teacher.name : "Teacher") + " " + statusLabel);
                     loadTeachers().catch(function () {});
                 } catch (error) {
                     showToast(error.message);
@@ -2779,6 +3177,21 @@ document.addEventListener("DOMContentLoaded", function () {
                     showToast(error.message);
                 }
             }
+
+            if (action === "reset-password" || action === "change-password") {
+                resetPasswordTargetId = id;
+                resetPasswordTargetName = teacher ? teacher.name : "";
+                resetPasswordTargetEmail = teacher ? teacher.email : "";
+                const userLabel = document.getElementById("resetPasswordDialogUser");
+                if (userLabel) userLabel.textContent = (teacher ? teacher.name + " (" + teacher.email + ")" : "");
+                const msg = document.getElementById("resetPasswordMessage");
+                if (msg) { msg.textContent = ""; msg.className = "form-message"; }
+                const newPw = document.getElementById("resetNewPassword");
+                const confPw = document.getElementById("resetConfirmNewPassword");
+                if (newPw) newPw.value = "";
+                if (confPw) confPw.value = "";
+                openModal("resetPasswordDialog");
+            }
         });
     }
 
@@ -2809,38 +3222,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function fetchTeacherAssignments(teacherId) {
         try {
-            const data = await api(`/teachers/${teacherId}/subjects`);
+            const data = await api(`/users/${teacherId}/subjects`, { cache: "no-store" });
             return data;
         } catch (error) {
             try {
-                const data = await api(`/assignments/teacher/${teacherId}`);
+                const data = await api(`/teachers/${teacherId}/subjects`, { cache: "no-store" });
                 return data;
             } catch (e) {
-                return { assignments: [], subjects: [] };
+                return { user_id: teacherId, subjects: [] };
             }
         }
     }
 
     async function saveTeacherAssignments(teacherId, assignments) {
-        try {
-            // Backend expects POST to /teachers/{id}/subjects with {subjects: [...]}
-            const subjects = Array.isArray(assignments) ? assignments : (assignments?.subjects || assignments?.assignments || []);
-            await api(`/teachers/${teacherId}/subjects`, {
-                method: "POST",
-                body: { subjects: subjects }
+        const list = Array.isArray(assignments) ? assignments : [];
+        const subjectNames = list.map(item => (typeof item === "string" ? item : (item.subject_id || item.subject || item.subjectName || item.name))).filter(Boolean);
+
+        // Save subject assignments using the teacher-subject endpoint.
+        await api(`/teachers/${teacherId}/subjects`, {
+            method: "POST",
+            body: { subjects: subjectNames }
+        });
+
+        // Save individual permissions through the user-subject permission endpoint.
+        for (const item of list) {
+            const subject = (typeof item === "string") ? item : (item.subject_id || item.subject || item.subjectName || item.name);
+            if (!subject) continue;
+            const perms = {
+                can_view_papers: !!(item.accessPapers ?? item.access_question_papers ?? false),
+                can_upload_process: !!(item.uploadProcess ?? item.upload_process ?? false),
+                can_manage_question_bank: !!(item.manageBank ?? item.manage_question_bank ?? false),
+                can_generate_papers: !!(item.generate ?? item.generate_papers ?? false)
+            };
+            await api(`/users/${teacherId}/subjects/${encodeURIComponent(subject)}/permissions`, {
+                method: "PUT",
+                body: perms
             });
-            return true;
-        } catch (error) {
-            try {
-                await api(`/users/${teacherId}/subjects`, {
-                    method: "POST",
-                    body: { subjects: Array.isArray(assignments) ? assignments : (assignments?.subjects || []) }
-                });
-                return true;
-            } catch (e) {
-                throw error;
-            }
         }
+
+        return true;
     }
 
     function openSubjectAssignment(teacher) {
@@ -2850,35 +3270,57 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!modal) {
             const dialog = document.createElement("dialog");
             dialog.id = "subjectAssignmentModal";
-            dialog.className = "modal";
+            dialog.className = "modal admin-dialog admin-assignment-dialog";
             dialog.innerHTML = `
-                <div class="modal-card" style="max-width: 900px; width: 90vw; max-height: 90vh; overflow-y: auto;">
-                    <div class="card-header">
+                <div class="admin-dialog-shell">
+                    <div class="admin-dialog-header">
                         <div>
-                            <h3>Subject Assignments & Permissions</h3>
+                            <h3 id="subjectAssignmentModalTitle">Subject Assignments &amp; Permissions</h3>
                             <p id="assignmentTeacherInfo">Assign subjects and permissions</p>
                         </div>
-                        <button type="button" class="btn btn-secondary small" id="closeAssignmentModal">Close</button>
+                        <button type="button" class="btn btn-secondary small" data-close="subjectAssignmentModal" id="closeAssignmentModal">Close</button>
                     </div>
-                    <div id="assignmentContent" style="padding: 1rem;">
-                        <p>Loading...</p>
+                    <div id="assignmentContent" class="admin-dialog-body assignment-content">
+                        <p>Loading subjects and assignments…</p>
                     </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-secondary" id="cancelAssignment">Cancel</button>
+                    <div class="modal-actions admin-dialog-footer">
+                        <button type="button" class="btn btn-secondary" data-close="subjectAssignmentModal" id="cancelAssignment">Cancel</button>
                         <button type="button" class="btn btn-primary" id="saveAssignment">Save Assignments</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(dialog);
-            document.getElementById("closeAssignmentModal").addEventListener("click", () => { try { dialog.close(); } catch(e) { dialog.classList.add('hidden'); } });
-            document.getElementById("cancelAssignment").addEventListener("click", () => { try { dialog.close(); } catch(e) { dialog.classList.add('hidden'); } });
-            document.getElementById("saveAssignment").addEventListener("click", saveCurrentAssignments);
             modal = dialog;
-            modal.addEventListener("click", function (e) { if (e.target === modal) { try { modal.close(); } catch(ex) { modal.classList.add('hidden'); } } });
         }
-        document.getElementById("assignmentTeacherInfo").textContent = `${teacher.name} (${teacher.email})`;
-        document.getElementById("assignmentContent").innerHTML = `<p>Loading subjects and assignments...</p>`;
-        try { if (typeof modal.showModal === "function") modal.showModal(); else modal.classList.remove("hidden"); } catch(e) { modal.classList.remove("hidden"); }
+
+        const teacherInfo = document.getElementById("assignmentTeacherInfo");
+        if (teacherInfo) {
+            teacherInfo.textContent = `${teacher.name} (${teacher.email})`;
+            teacherInfo.title = `${teacher.name} (${teacher.email})`;
+        }
+
+        const content = document.getElementById("assignmentContent");
+        if (content) {
+            content.innerHTML = stateHTML("⟳", "Loading subjects and assignments…", "loading");
+        }
+
+        const closeBtn = document.getElementById("closeAssignmentModal");
+        if (closeBtn && !closeBtn._hasBound) {
+            closeBtn._hasBound = true;
+            closeBtn.addEventListener("click", () => closeModal("subjectAssignmentModal"));
+        }
+        const cancelBtn = document.getElementById("cancelAssignment");
+        if (cancelBtn && !cancelBtn._hasBound) {
+            cancelBtn._hasBound = true;
+            cancelBtn.addEventListener("click", () => closeModal("subjectAssignmentModal"));
+        }
+        const saveBtn = document.getElementById("saveAssignment");
+        if (saveBtn && !saveBtn._hasBound) {
+            saveBtn._hasBound = true;
+            saveBtn.addEventListener("click", saveCurrentAssignments);
+        }
+
+        openModal("subjectAssignmentModal");
         loadAssignmentData(teacher.id);
     }
 
@@ -2888,17 +3330,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 fetchAllSubjects(),
                 fetchTeacherAssignments(teacherId)
             ]);
-            const assignments = assignmentsData.assignments || assignmentsData.data || assignmentsData || [];
+            const rawSubjects = Array.isArray(assignmentsData.subjects) ? assignmentsData.subjects : (Array.isArray(assignmentsData) ? assignmentsData : []);
             const assignmentMap = {};
-            (Array.isArray(assignments) ? assignments : []).forEach(a => {
-                const subject = a.subject_id || a.subject || a.subjectName;
+            rawSubjects.forEach(item => {
+                let subject = null;
+                let perms = {};
+                if (typeof item === "string") {
+                    subject = item;
+                } else if (item && typeof item === "object") {
+                    subject = item.subject_name || item.subject || item.subject_id || item.subjectName || item.name;
+                    perms = item;
+                }
                 if (subject) {
                     assignmentMap[subject] = {
                         assigned: true,
-                        accessPapers: a.access_question_papers ?? a.accessPapers ?? a.permissions?.accessPapers ?? a.permissions?.questionPapers ?? true,
-                        uploadProcess: a.upload_process ?? a.uploadProcess ?? a.permissions?.uploadProcess ?? a.permissions?.process ?? true,
-                        manageBank: a.manage_question_bank ?? a.manageBank ?? a.permissions?.manageBank ?? a.permissions?.questionBank ?? true,
-                        generate: a.generate_papers ?? a.generatePapers ?? a.permissions?.generate ?? a.permissions?.generatePapers ?? true
+                        accessPapers: (perms.can_view_papers === 1 || perms.can_view_papers === true),
+                        uploadProcess: (perms.can_upload_process === 1 || perms.can_upload_process === true),
+                        manageBank: (perms.can_manage_question_bank === 1 || perms.can_manage_question_bank === true),
+                        generate: (perms.can_generate_papers === 1 || perms.can_generate_papers === true)
                     };
                 }
             });
@@ -2910,29 +3359,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function renderAssignmentUI(subjects, assignmentMap) {
         const content = document.getElementById("assignmentContent");
+        if (!content) return;
         if (!subjects.length) {
-            content.innerHTML = `<p>No subjects available.</p>`;
+            content.innerHTML = stateHTML("▣", "No subjects available.", "");
             return;
         }
-        let html = `<table class="data-table"><thead><tr><th>Assign</th><th>Subject</th><th>Access Question Papers</th><th>Upload & Process Papers</th><th>Access & Manage Question Bank</th><th>Generate Question Papers</th></tr></thead><tbody>`;
+        let html = `<div class="assignment-table-wrap">
+            <table class="data-table assignment-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="th-assign">Assign</th>
+                        <th scope="col" class="th-subject">Subject</th>
+                        <th scope="col" class="th-perm" title="Access question papers">View Papers</th>
+                        <th scope="col" class="th-perm" title="Upload and process papers">Upload &amp; Process</th>
+                        <th scope="col" class="th-perm" title="Access and manage the question bank">Manage Bank</th>
+                        <th scope="col" class="th-perm" title="Generate question papers">Generate Papers</th>
+                    </tr>
+                </thead>
+                <tbody>`;
         subjects.forEach(subject => {
             const subj = typeof subject === 'string' ? subject : (subject.name || subject.subject_id);
             const map = assignmentMap[subj] || { assigned: false, accessPapers: true, uploadProcess: true, manageBank: true, generate: true };
-            html += `<tr>
-                <td><input type="checkbox" class="assign-check" data-subject="${escapeHTML(subj)}" ${map.assigned ? 'checked' : ''}></td>
-                <td>${escapeHTML(subj)}</td>
-                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="accessPapers" ${map.assigned && map.accessPapers ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="uploadProcess" ${map.assigned && map.uploadProcess ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="manageBank" ${map.assigned && map.manageBank ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td><input type="checkbox" class="perm-check" data-subject="${escapeHTML(subj)}" data-perm="generate" ${map.assigned && map.generate ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+            html += `<tr class="assignment-row ${map.assigned ? 'is-assigned' : ''}">
+                <td class="td-assign" data-label="Assign"><input type="checkbox" class="assign-check assignment-checkbox" aria-label="Assign ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" ${map.assigned ? 'checked' : ''}></td>
+                <td class="td-subject assignment-subject" data-label="Subject" title="${escapeHTML(subj)}">${escapeHTML(subj)}</td>
+                <td class="td-perm" data-label="View Papers"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="View papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="accessPapers" ${map.assigned && map.accessPapers ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td class="td-perm" data-label="Upload & Process"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Upload and process papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="uploadProcess" ${map.assigned && map.uploadProcess ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td class="td-perm" data-label="Manage Bank"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Manage question bank for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="manageBank" ${map.assigned && map.manageBank ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
+                <td class="td-perm" data-label="Generate Papers"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Generate papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="generate" ${map.assigned && map.generate ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
             </tr>`;
         });
-        html += `</tbody></table>`;
+        html += `</tbody></table></div>`;
         content.innerHTML = html;
         content.querySelectorAll('.assign-check').forEach(cb => {
             cb.addEventListener('change', function() {
                 const subj = this.getAttribute('data-subject');
-                content.querySelectorAll(`.perm-check[data-subject="${subj.replace(/"/g, '\\"')}"]`).forEach(pc => {
+                const row = this.closest('.assignment-row');
+                if (row) row.classList.toggle('is-assigned', this.checked);
+                content.querySelectorAll('.perm-check').forEach(pc => {
+                    if (pc.getAttribute('data-subject') !== subj) return;
                     pc.disabled = !this.checked;
                     if (!this.checked) pc.checked = false;
                 });
@@ -2947,7 +3412,9 @@ document.addEventListener("DOMContentLoaded", function () {
         content.querySelectorAll('.assign-check:checked').forEach(cb => {
             const subj = cb.getAttribute('data-subject');
             const getPerm = (perm) => {
-                const pc = content.querySelector(`.perm-check[data-subject="${subj.replace(/"/g, '\\"')}"][data-perm="${perm}"]`);
+                const pc = Array.from(content.querySelectorAll('.perm-check')).find(function (checkbox) {
+                    return checkbox.getAttribute('data-subject') === subj && checkbox.getAttribute('data-perm') === perm;
+                });
                 return pc ? pc.checked : true;
             };
             assignments.push({
@@ -2966,14 +3433,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             });
         });
+        setButtonLoading(document.getElementById("saveAssignment"), true, "Saving…");
         try {
             await saveTeacherAssignments(currentAssignmentTeacher.id, assignments);
             showToast("Assignments saved successfully");
-            const modalEl = document.getElementById("subjectAssignmentModal");
-            try { if (modalEl && typeof modalEl.close === 'function') modalEl.close(); else if (modalEl) modalEl.classList.add('hidden'); } catch(e) {}
+            await loadAssignmentData(currentAssignmentTeacher.id);
             loadTeachers().catch(function(){});
         } catch (error) {
             showToast("Failed to save assignments: " + error.message);
+        } finally {
+            setButtonLoading(document.getElementById("saveAssignment"), false);
         }
     }
 

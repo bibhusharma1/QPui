@@ -1,0 +1,26 @@
+# AI taste / local agent state
+.commandcode/
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+
+# Logs / temp
+*.log
+*.tmp
+tmp/
+scratchpad/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Markdown docs (keep README)
+*.md
+!README.md
+!frontend/README.md
