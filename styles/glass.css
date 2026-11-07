@@ -371,11 +371,13 @@ button, .btn { transition: transform 160ms ease, box-shadow 160ms ease, backgrou
 /* Shared admin dialog modal system */
 dialog.modal.admin-dialog {
   box-sizing: border-box;
-  width: min(70vw, 1140px);
+  inset: 0;
+  width: min(85vw, 760px);
   max-width: calc(100vw - 32px);
-  height: auto;
-  max-height: min(88vh, 880px);
-  max-height: min(88dvh, 880px);
+  height: fit-content;
+  min-height: 0;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   padding: 0;
   margin: auto;
   border: 1px solid var(--glass-border);
@@ -390,6 +392,8 @@ dialog.modal.admin-dialog {
 dialog.modal.admin-dialog[open] {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 dialog.modal.admin-dialog::backdrop {
   background: rgba(20, 24, 46, 0.48);
@@ -400,10 +404,10 @@ dialog.modal.admin-dialog::backdrop {
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
+  width: 100%;
   min-width: 0;
   min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 .admin-dialog-header {
   position: relative;
@@ -431,9 +435,11 @@ dialog.modal.admin-dialog::backdrop {
   line-height: 1.45;
 }
 .admin-dialog-body {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   min-height: 0;
+  max-height: calc(100vh - 220px);
+  max-height: calc(100dvh - 220px);
   padding: clamp(18px, 2.4vw, 26px);
   overflow-x: hidden;
   overflow-y: auto;
@@ -457,16 +463,16 @@ dialog.modal.admin-dialog::backdrop {
   min-width: 112px;
 }
 .admin-teacher-dialog {
-  width: min(70vw, 840px);
+  width: min(85vw, 760px);
 }
 .admin-assignment-dialog {
-  width: min(70vw, 1140px);
+  width: min(85vw, 680px);
 }
 .admin-reset-password-dialog {
-  width: min(70vw, 560px);
+  width: min(85vw, 560px);
 }
 .admin-confirm-dialog {
-  width: min(70vw, 520px) !important;
+  width: min(85vw, 440px) !important;
 }
 .admin-confirm-dialog .admin-dialog-body {
   padding-block: 22px;
@@ -485,6 +491,10 @@ dialog.modal.admin-dialog::backdrop {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+.admin-dialog > form {
+  width: 100%;
+  min-width: 0;
 }
 .admin-teacher-form .admin-dialog-body {
   flex: 0 1 auto;
@@ -548,12 +558,24 @@ dialog.modal.admin-dialog::backdrop {
 /* Subject Assignments & Permissions Dialog */
 .admin-assignment-dialog .admin-dialog-header {
   align-items: center;
+  padding-block: 18px;
+}
+.admin-assignment-dialog .admin-dialog-header h3 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.admin-assignment-dialog .admin-dialog-header p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 .assignment-content {
   display: grid;
   align-content: start;
-  gap: 14px;
-  min-height: 200px;
+  gap: 0;
+  min-height: 0;
+  padding: 16px 20px;
 }
 .assignment-content > .empty-state {
   margin: 0;
@@ -563,17 +585,18 @@ dialog.modal.admin-dialog::backdrop {
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  border-radius: var(--radius);
+  border-radius: 11px;
   border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
 }
 .assignment-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 0;
   table-layout: fixed;
   border-collapse: collapse;
 }
 .assignment-table thead th {
-  padding: 13px 12px;
+  padding: 11px 14px;
   background: var(--glass-table-header);
   color: var(--text-secondary);
   font-size: 12px;
@@ -584,7 +607,7 @@ dialog.modal.admin-dialog::backdrop {
   border-bottom: 1px solid var(--border);
 }
 .assignment-table thead th.th-assign {
-  width: 72px;
+  width: 92px;
 }
 .assignment-table thead th.th-subject {
   width: auto;
@@ -596,7 +619,7 @@ dialog.modal.admin-dialog::backdrop {
 }
 .assignment-table tbody tr {
   background: var(--glass-row);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   transition: background-color 150ms ease;
 }
 .assignment-table tbody tr:last-child {
@@ -610,16 +633,17 @@ dialog.modal.admin-dialog::backdrop {
   background: color-mix(in srgb, var(--primary) 4%, var(--glass-row));
 }
 .assignment-table tbody td {
-  padding: 12px;
+  height: 46px;
+  padding: 10px 14px;
   text-align: center;
   vertical-align: middle;
 }
 .assignment-table tbody td.td-assign {
-  width: 72px;
+  width: 92px;
 }
 .assignment-table tbody td.td-subject {
   text-align: left;
-  padding-left: 18px;
+  padding-left: 16px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -645,15 +669,15 @@ dialog.modal.admin-dialog::backdrop {
 /* Tablet (max-width: 960px) */
 @media (max-width: 960px) {
   dialog.modal.admin-dialog {
-    width: 85vw;
+    width: 90vw;
     max-width: calc(100vw - 28px);
-    max-height: min(90vh, 900px);
-    max-height: min(90dvh, 900px);
+    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
   }
-  .admin-teacher-dialog { width: 85vw; }
-  .admin-assignment-dialog { width: 85vw; }
-  .admin-reset-password-dialog { width: min(85vw, 560px); }
-  .admin-confirm-dialog { width: min(85vw, 520px) !important; }
+  .admin-teacher-dialog,
+  .admin-assignment-dialog { width: min(90vw, 680px); }
+  .admin-reset-password-dialog { width: min(90vw, 560px); }
+  .admin-confirm-dialog { width: min(90vw, 440px) !important; }
 
   .teacher-card-information {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -768,11 +792,11 @@ dialog.modal.admin-dialog::backdrop {
     border-radius: var(--radius);
   }
   .admin-teacher-dialog,
-  .admin-assignment-dialog,
-  .admin-reset-password-dialog,
-  .admin-confirm-dialog {
+  .admin-assignment-dialog {
     width: 94vw !important;
   }
+  .admin-reset-password-dialog { width: min(94vw, 560px) !important; }
+  .admin-confirm-dialog { width: min(94vw, 440px) !important; }
   .admin-dialog-header {
     min-height: 56px;
     padding: 13px 16px;
@@ -797,6 +821,9 @@ dialog.modal.admin-dialog::backdrop {
   }
   .admin-assignment-dialog .admin-dialog-header {
     align-items: flex-start;
+  }
+  .admin-assignment-dialog .assignment-content {
+    padding: 14px 16px;
   }
   .admin-assignment-dialog .admin-dialog-header .btn {
     flex: 0 0 auto;

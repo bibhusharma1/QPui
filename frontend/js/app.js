@@ -93,6 +93,7 @@ class App {
         }
 
         try {
+            this.currentUser = null;
             await login(email, password);
             await this.loadCurrentUser();
             this.showLoginMessage('Login successful', 'success');
@@ -117,6 +118,7 @@ class App {
 
     handleLogout() {
         logout();
+        this.currentUser = null;
         this.showLoginPage();
     }
 

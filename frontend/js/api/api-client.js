@@ -69,9 +69,15 @@ export class ApiClient {
         } catch (e) {}
 
         if (response.status === 401) {
+            let detail = "Unauthorized";
+            try {
+                const data = await response.json();
+                if (typeof data.detail === "string") detail = data.detail;
+                else if (data.message) detail = data.message;
+            } catch {}
             this.clearSession();
             if (typeof this.onUnauthorized === "function") this.onUnauthorized();
-            const error = new Error("Unauthorized");
+            const error = new Error(detail);
             error.status = 401;
             throw error;
         }

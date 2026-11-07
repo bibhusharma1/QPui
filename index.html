@@ -626,6 +626,8 @@
                                     <option value="" disabled selected>Select subject</option>
                                 </select>
 
+                                <input type="search" id="qbSearch" placeholder="Search questions..." aria-label="Search questions">
+
                                 <select id="qbMarksGroup">
                                     <option value="" disabled selected>Select marks</option>
                                 </select>
@@ -1877,6 +1879,31 @@
                         </div>
                     </div>
 
+                    <dialog id="pyqPriorityDialog" class="modal pyq-priority-dialog">
+                        <div class="modal-card">
+                            <h3>Set Default Question Priority</h3>
+                            <p>Choose the default priority for questions extracted from this PDF. Questions with an explicitly specified priority will retain their own priority.</p>
+                            <form id="pyqPriorityForm" novalidate>
+                                <label class="pyq-priority-option">
+                                    <input type="radio" name="pyqDefaultPriority" value="1" checked>
+                                    <span>Priority 1 – Normal</span>
+                                </label>
+                                <label class="pyq-priority-option">
+                                    <input type="radio" name="pyqDefaultPriority" value="2">
+                                    <span>Priority 2 – Important</span>
+                                </label>
+                                <label class="pyq-priority-option">
+                                    <input type="radio" name="pyqDefaultPriority" value="3">
+                                    <span>Priority 3 – High priority</span>
+                                </label>
+                                <div class="modal-actions">
+                                    <button type="button" class="btn btn-secondary" id="pyqPriorityCancel">Cancel</button>
+                                    <button type="submit" class="btn btn-primary">Process PDF</button>
+                                </div>
+                            </form>
+                        </div>
+                    </dialog>
+
 
 <!-- RESET PASSWORD DIALOG -->
 <dialog id="resetPasswordDialog" class="modal admin-dialog admin-reset-password-dialog">
@@ -2040,7 +2067,7 @@
     <div class="admin-dialog-shell">
         <div class="admin-dialog-header">
             <div>
-                <h3 id="subjectAssignmentModalTitle">Subject Assignments &amp; Permissions</h3>
+                <h3 id="subjectAssignmentModalTitle">Subject Assignments</h3>
                 <p id="assignmentTeacherInfo">Assign subjects and permissions</p>
             </div>
             <button type="button" class="btn btn-secondary small" data-close="subjectAssignmentModal" id="closeAssignmentModal">Close</button>

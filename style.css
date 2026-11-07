@@ -2572,6 +2572,21 @@ dialog.modal label small {
     margin-top: 20px;
 }
 
+.pyq-priority-dialog .pyq-priority-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.pyq-priority-dialog .pyq-priority-option input {
+    margin: 0;
+}
+
 .modal-actions-split {
     justify-content: space-between;
     align-items: center;

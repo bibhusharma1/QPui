@@ -118,12 +118,9 @@ function hasSessionFor(t) {
     try { return !!sessionStorage.getItem(tokenKeyFor(t)); } catch (e) { return false; }
 }
 
-// reachability probe (no-cors, short timeout)
+// reachability probe (cors, short timeout) - treat HTTP errors as unreachable
 function probeBackend(base, timeoutMs) {
-    // Try a few endpoints so a blocked /health request does not falsely mark
-    // a reachable backend as down. Any HTTP response (opaque included) counts
-    // as reachable; only a network-level failure counts as unreachable.
-    const endpoints = ["/health", "/", "/docs"];
+    const endpoints = ["/health", "/"];
     return new Promise(function (resolve) {
         let finished = false;
         let attempts = 0;
@@ -139,8 +136,12 @@ function probeBackend(base, timeoutMs) {
             const timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, timeoutMs || 3000);
             attempts += 1;
             try {
-                fetch(base + path, { method: "GET", mode: "no-cors", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
-                    .then(function () { clearTimeout(timer); finish(true); })
+                fetch(base + path, { method: "GET", mode: "cors", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+                    .then(function (res) {
+                        clearTimeout(timer);
+                        if (res && res.ok) finish(true);
+                        else { attempts -= 1; if (attempts <= 0) finish(false); }
+                    })
                     .catch(function () { clearTimeout(timer); attempts -= 1; if (attempts <= 0) finish(false); });
             } catch (e) {
                 clearTimeout(timer);
@@ -215,8 +216,10 @@ let backendInitPromise = (async function () {
 // Fallback coordination
 let backendSwitchCooldownUntil = 0;
 let backendSwitchInProgress = false;
+let authInProgress = false;
 
 function tryFallbackBackend() {
+    if (authInProgress) return false;
     const now = Date.now();
     if (backendSwitchInProgress || now < backendSwitchCooldownUntil) return false;
     backendSwitchInProgress = true;
@@ -232,6 +235,7 @@ function tryFallbackBackend() {
 }
 
 async function handleBackendFailureAndMaybeSwitch() {
+    if (authInProgress) return false;
     const now = Date.now();
     if (backendSwitchInProgress || now < backendSwitchCooldownUntil) return false;
     backendSwitchInProgress = true;
@@ -352,8 +356,18 @@ async function apiRequest(path, options = {}) {
         delete fetchOptions.authToken;
         delete fetchOptions.skipAuth;
         delete fetchOptions.__retried;
+        delete fetchOptions.skipFallback;
         response = await fetch(API_BASE + path, fetchOptions);
     } catch (error) {
+        // During an active login/auth request, never switch backend URLs.
+        if (authInProgress) {
+            throw new Error("Cannot reach server at " + API_BASE);
+        }
+        // Allow callers (e.g. PATCH with unknown commit status) to opt out of
+        // automatic backend switching / retry.
+        if (options.skipFallback) {
+            throw (error instanceof Error ? error : new Error("Cannot reach server at " + API_BASE));
+        }
         // Attempt fallback backend on network failure, then retry once.
         if (!options.__retried) {
             try {
@@ -660,7 +674,7 @@ document.addEventListener("DOMContentLoaded", function () {
     async function loadCurrentUser() {
         if (!getToken()) return false;
         try {
-            currentUser = await api("/auth/me");
+            currentUser = await apiRequest("/auth/me");
             updateUserUI();
             applyRoleUI();
             if (isAdminUser()) await loadAdminAccessMode();
@@ -671,6 +685,8 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             if (error.status === 401) clearSession();
             currentUser = null;
+            currentUserAssignments = null;
+            currentUserPermissions = {};
             if (error.status !== 401) throw error;
             return false;
         }
@@ -1336,11 +1352,16 @@ document.addEventListener("DOMContentLoaded", function () {
         loginChallenge = null;
         clearCooldown();
         setToken(accessToken);
+        currentUser = null;
+        currentUserAssignments = null;
+        currentUserPermissions = {};
         try {
             if (!await loadCurrentUser()) throw new Error("Login succeeded but the backend did not return a valid current user.");
         } catch (error) {
             clearSession();
             currentUser = null;
+            currentUserAssignments = null;
+            currentUserPermissions = {};
             throw error;
         }
         loginForm?.reset();
@@ -1479,6 +1500,12 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             loggingIn = true;
+            authInProgress = true;
+            // Reset stale user/session state so login is not decided by cached data.
+            currentUser = null;
+            currentUserAssignments = null;
+            currentUserPermissions = {};
+            loginChallenge = null;
             setButtonLoading(loginButton, true, "Signing in…");
 
             try {
@@ -1491,7 +1518,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 await handleLoginResponse(data, code);
             } catch (error) {
                 if (!error?.status) {
-                    if (loginMessage) loginMessage.textContent = "Authentication service unavailable. Please try again.";
+                    if (loginMessage) loginMessage.textContent = (error && error.message) ? error.message : "Authentication service unavailable. Please try again.";
                 } else if (error.fromTotp === true) {
                     if (error.status === 401) {
                         if (loginMessage) loginMessage.textContent = "The authenticator code could not be verified. Enter the current code and try again.";
@@ -1501,8 +1528,6 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (loginMessage) loginMessage.textContent = error.message;
                     }
                 } else if (error.status === 401) {
-                    // Surface the backend's detail when it distinguishes pending or
-                    // unauthorized accounts; fall back to a generic combined message.
                     const detail = (error && typeof error.message === "string" && error.message.trim())
                         ? error.message.trim()
                         : "Invalid email or password.";
@@ -1513,11 +1538,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 if (loginMessage) loginMessage.classList.add("error");
 
-                // Failures keep the email, password and code in place so the
-                // user can correct the code and retry without retyping.
                 if (error?.status === 429) startLoginRetryCountdown(retrySeconds(error));
             } finally {
                 loggingIn = false;
+                authInProgress = false;
                 setButtonLoading(loginButton, false);
                 if (loginButton) loginButton.disabled = Boolean(cooldownUntil);
             }
@@ -1729,9 +1753,19 @@ document.addEventListener("DOMContentLoaded", function () {
     if (logoutButton) {
         logoutButton.addEventListener("click", function () {
             redirectAfterLogin = null;
-            clearSession();
+            loginChallenge = null;
+            clearCooldown();
+            cooldownUntil = 0;
+            loggingIn = false;
+            currentUser = null;
+            currentUserAssignments = null;
+            currentUserPermissions = {};
+            adminAccessMode = "edit";
+            accessModeBackendAvailable = true;
+            clearAllSessions();
 
             if (loginForm) loginForm.reset();
+            hideTotpField();
 
             showLoginPage();
 
@@ -2353,6 +2387,56 @@ document.addEventListener("DOMContentLoaded", function () {
         await downloadFile(pdfPath(subject, filename) + "/reconstruction", filename.replace(/\.pdf$/i, "") + ".docx");
     }
 
+    function askPyqDefaultPriority() {
+        return new Promise(function (resolve) {
+            const dialog = document.getElementById("pyqPriorityDialog");
+            if (!dialog) { resolve(1); return; }
+            const form = dialog.querySelector("#pyqPriorityForm");
+            const cancelBtn = dialog.querySelector("#pyqPriorityCancel");
+            const radios = dialog.querySelectorAll('input[name="pyqDefaultPriority"]');
+            radios.forEach(function (r) { r.checked = (r.value === "1"); });
+
+            let settled = false;
+            function cleanup() {
+                if (form) form.removeEventListener("submit", onSubmit);
+                if (cancelBtn) cancelBtn.removeEventListener("click", onCancel);
+                dialog.removeEventListener("close", onClose);
+            }
+            function onSubmit(event) {
+                if (event) event.preventDefault();
+                if (settled) return;
+                settled = true;
+                const selected = dialog.querySelector('input[name="pyqDefaultPriority"]:checked');
+                const value = selected ? Number(selected.value) : 1;
+                cleanup();
+                try { dialog.close(); } catch (e) { dialog.removeAttribute("open"); }
+                resolve(value);
+            }
+            function onCancel() {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                try { dialog.close(); } catch (e) { dialog.removeAttribute("open"); }
+                resolve(null);
+            }
+            function onClose() {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(null);
+            }
+            if (form) form.addEventListener("submit", onSubmit);
+            if (cancelBtn) cancelBtn.addEventListener("click", onCancel);
+            dialog.addEventListener("close", onClose);
+            try {
+                if (typeof dialog.showModal === "function") dialog.showModal();
+                else { dialog.setAttribute("open", "open"); }
+            } catch (e) {
+                dialog.setAttribute("open", "open");
+            }
+        });
+    }
+
     const pyqTableBody = document.getElementById("pyqTableBody");
 
     if (pyqTableBody) {
@@ -2390,12 +2474,19 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 activeProcessKeys.add(key);
+
+                const selectedPriority = await askPyqDefaultPriority();
+                if (selectedPriority === null) {
+                    activeProcessKeys.delete(key);
+                    return;
+                }
+
                 setButtonLoading(button, true, "Starting…");
 
                 try {
                     const started = await api(
                         pdfPath(subject, filename) + "/process",
-                        { method: "POST", body: { force: true } }
+                        { method: "POST", body: { force: true, default_priority: selectedPriority } }
                     );
                     const jobId = started && (started.job_id || started.jobId || started.id);
                     if (!jobId) throw new Error("The backend returned no job_id; processing status cannot be tracked.");
@@ -2856,8 +2947,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             try {
                 if (editingTeacherId) {
-                    await api("/teachers/" + editingTeacherId, {
-                        method: "PATCH", body: body
+                    await apiRequest("/teachers/" + editingTeacherId, {
+                        method: "PATCH", body: body, skipFallback: true
                     });
                     showToast("Teacher updated: " + body.name);
                 } else {
@@ -2900,6 +2991,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     });
                     if (!anyFieldError) showTeacherFormError((error && error.message) ? error.message : "Registration failed. Please try again.");
                 }
+                showToast((error && error.message) ? error.message : "Request failed. Please try again.");
             } finally {
                 teacherFormSubmitting = false;
                 setButtonLoading(document.getElementById("teacherSaveButton"), false);
@@ -3048,19 +3140,29 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            authInProgress = true;
             setButtonLoading(document.getElementById("profileChangePasswordButton"), true, "Saving…");
             try {
-                await api("/auth/change-password", {
+                const response = await apiRequest("/auth/change-password", {
                     method: "POST",
                     body: { current_password: current, new_password: next, confirm_password: confirm }
                 });
+                // Clear stale authentication-related cached data.
+                loginChallenge = null;
+                clearCooldown();
+                const otherTarget = (activeBackendTarget === "local") ? "production" : "local";
+                try { sessionStorage.removeItem(tokenKeyFor(otherTarget)); } catch (e) {}
+                if (response && response.access_token) {
+                    setToken(response.access_token);
+                }
                 setPasswordMessage(msgId, "Password changed successfully.", "success");
                 clearProfilePasswordFields();
                 showToast("Password changed successfully.");
                 closeModal("profileChangePasswordModal");
             } catch (error) {
-                setPasswordMessage(msgId, error.message, "error");
+                setPasswordMessage(msgId, (error && error.message) ? error.message : "Password change failed. Please try again.", "error");
             } finally {
+                authInProgress = false;
                 setButtonLoading(document.getElementById("profileChangePasswordButton"), false);
             }
         });
@@ -3239,26 +3341,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const subjectNames = list.map(item => (typeof item === "string" ? item : (item.subject_id || item.subject || item.subjectName || item.name))).filter(Boolean);
 
         // Save subject assignments using the teacher-subject endpoint.
+        // Individual permissions are granted automatically by the backend.
         await api(`/teachers/${teacherId}/subjects`, {
             method: "POST",
             body: { subjects: subjectNames }
         });
-
-        // Save individual permissions through the user-subject permission endpoint.
-        for (const item of list) {
-            const subject = (typeof item === "string") ? item : (item.subject_id || item.subject || item.subjectName || item.name);
-            if (!subject) continue;
-            const perms = {
-                can_view_papers: !!(item.accessPapers ?? item.access_question_papers ?? false),
-                can_upload_process: !!(item.uploadProcess ?? item.upload_process ?? false),
-                can_manage_question_bank: !!(item.manageBank ?? item.manage_question_bank ?? false),
-                can_generate_papers: !!(item.generate ?? item.generate_papers ?? false)
-            };
-            await api(`/users/${teacherId}/subjects/${encodeURIComponent(subject)}/permissions`, {
-                method: "PUT",
-                body: perms
-            });
-        }
 
         return true;
     }
@@ -3275,7 +3362,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 <div class="admin-dialog-shell">
                     <div class="admin-dialog-header">
                         <div>
-                            <h3 id="subjectAssignmentModalTitle">Subject Assignments &amp; Permissions</h3>
+                            <h3 id="subjectAssignmentModalTitle">Subject Assignments</h3>
                             <p id="assignmentTeacherInfo">Assign subjects and permissions</p>
                         </div>
                         <button type="button" class="btn btn-secondary small" data-close="subjectAssignmentModal" id="closeAssignmentModal">Close</button>
@@ -3370,10 +3457,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     <tr>
                         <th scope="col" class="th-assign">Assign</th>
                         <th scope="col" class="th-subject">Subject</th>
-                        <th scope="col" class="th-perm" title="Access question papers">View Papers</th>
-                        <th scope="col" class="th-perm" title="Upload and process papers">Upload &amp; Process</th>
-                        <th scope="col" class="th-perm" title="Access and manage the question bank">Manage Bank</th>
-                        <th scope="col" class="th-perm" title="Generate question papers">Generate Papers</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -3383,24 +3466,14 @@ document.addEventListener("DOMContentLoaded", function () {
             html += `<tr class="assignment-row ${map.assigned ? 'is-assigned' : ''}">
                 <td class="td-assign" data-label="Assign"><input type="checkbox" class="assign-check assignment-checkbox" aria-label="Assign ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" ${map.assigned ? 'checked' : ''}></td>
                 <td class="td-subject assignment-subject" data-label="Subject" title="${escapeHTML(subj)}">${escapeHTML(subj)}</td>
-                <td class="td-perm" data-label="View Papers"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="View papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="accessPapers" ${map.assigned && map.accessPapers ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td class="td-perm" data-label="Upload & Process"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Upload and process papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="uploadProcess" ${map.assigned && map.uploadProcess ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td class="td-perm" data-label="Manage Bank"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Manage question bank for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="manageBank" ${map.assigned && map.manageBank ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
-                <td class="td-perm" data-label="Generate Papers"><input type="checkbox" class="perm-check assignment-checkbox" aria-label="Generate papers for ${escapeHTML(subj)}" data-subject="${escapeHTML(subj)}" data-perm="generate" ${map.assigned && map.generate ? 'checked' : ''} ${map.assigned ? '' : 'disabled'}></td>
             </tr>`;
         });
         html += `</tbody></table></div>`;
         content.innerHTML = html;
         content.querySelectorAll('.assign-check').forEach(cb => {
             cb.addEventListener('change', function() {
-                const subj = this.getAttribute('data-subject');
                 const row = this.closest('.assignment-row');
                 if (row) row.classList.toggle('is-assigned', this.checked);
-                content.querySelectorAll('.perm-check').forEach(pc => {
-                    if (pc.getAttribute('data-subject') !== subj) return;
-                    pc.disabled = !this.checked;
-                    if (!this.checked) pc.checked = false;
-                });
             });
         });
     }
@@ -3411,26 +3484,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const assignments = [];
         content.querySelectorAll('.assign-check:checked').forEach(cb => {
             const subj = cb.getAttribute('data-subject');
-            const getPerm = (perm) => {
-                const pc = Array.from(content.querySelectorAll('.perm-check')).find(function (checkbox) {
-                    return checkbox.getAttribute('data-subject') === subj && checkbox.getAttribute('data-perm') === perm;
-                });
-                return pc ? pc.checked : true;
-            };
             assignments.push({
                 subject_id: subj,
                 subject: subj,
-                assigned: true,
-                access_question_papers: getPerm('accessPapers'),
-                upload_process: getPerm('uploadProcess'),
-                manage_question_bank: getPerm('manageBank'),
-                generate_papers: getPerm('generate'),
-                permissions: {
-                    accessPapers: getPerm('accessPapers'),
-                    uploadProcess: getPerm('uploadProcess'),
-                    manageBank: getPerm('manageBank'),
-                    generatePapers: getPerm('generate')
-                }
+                assigned: true
             });
         });
         setButtonLoading(document.getElementById("saveAssignment"), true, "Saving…");
@@ -3649,7 +3706,10 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        if (marksGroup && !marksGroup.value) {
+        const qbSearchInputEl = document.getElementById("qbSearch");
+        const qbSearchQuery = (qbSearchInputEl && qbSearchInputEl.value ? qbSearchInputEl.value : "").trim();
+
+        if (!qbSearchQuery && marksGroup && !marksGroup.value) {
             pyqActiveQuestionLoadToken = ++pyqQuestionLoadToken;
             tbody.innerHTML = '<tr><td colspan="1" class="state-cell">Select a marks value to view questions.</td></tr>';
             if (pagination) pagination.style.display = "none";
@@ -3666,7 +3726,10 @@ document.addEventListener("DOMContentLoaded", function () {
         params.set("page", "1");
         params.set("page_size", "200");
 
-        if (marksGroup && marksGroup.value === "all") {
+        if (qbSearchQuery) {
+            // Subject-wide search: backend searches all marks categories.
+            params.set("search", qbSearchQuery);
+        } else if (marksGroup && marksGroup.value === "all") {
             // All Questions: the documented unfiltered contract is to omit
             // marks entirely; no fabricated value is ever sent.
         } else if (marksGroup && marksGroup.value) {
@@ -3743,9 +3806,11 @@ document.addEventListener("DOMContentLoaded", function () {
             const flaggedCount = Array.isArray(qbFlaggedItems) ? qbFlaggedItems.length : 0;
             const emptyMessage = flaggedCount
                 ? "No validated questions for this selection; " + flaggedCount + " record(s) need review below."
-                : ((marksGroup && marksGroup.value === "all")
-                    ? "No questions found for the selected subject."
-                    : "No questions found for the selected subject and marks.");
+                : (qbSearchQuery
+                    ? "No questions match your search."
+                    : ((marksGroup && marksGroup.value === "all")
+                        ? "No questions found for the selected subject."
+                        : "No questions found for the selected subject and marks."));
             tbody.innerHTML = '<tr><td colspan="1" class="state-cell">' + emptyMessage + "</td></tr>";
             if (pagination) pagination.style.display = "none";
             if (summary) summary.textContent = emptyMessage;
@@ -4101,18 +4166,21 @@ document.addEventListener("DOMContentLoaded", function () {
         const tbody = document.getElementById("pyqQuestionsTableBody");
         if (!marksSelect) return;
         const token = ++pyqMarksLoadToken;
-        pyqActiveQuestionLoadToken = ++pyqQuestionLoadToken;
+        const searchActive = !!(document.getElementById("qbSearch")?.value || "").trim();
+        if (!searchActive) {
+            pyqActiveQuestionLoadToken = ++pyqQuestionLoadToken;
+        }
         if (!subjectId) {
             marksSelect.innerHTML = '<option value="">Select marks</option>';
             marksSelect.disabled = false;
-            if (tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell">Select a subject to view its questions.</td></tr>';
+            if (!searchActive && tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell">Select a subject to view its questions.</td></tr>';
             return;
         }
         marksSelect.innerHTML = '<option value="">Loading marks…</option>';
         marksSelect.disabled = true;
-        if (tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell">Loading available marks…</td></tr>';
+        if (!searchActive && tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell">Loading available marks…</td></tr>';
         const pagination = document.getElementById("pyqQuestionsPagination");
-        if (pagination) pagination.style.display = "none";
+        if (!searchActive && pagination) pagination.style.display = "none";
         try {
             const params = new URLSearchParams({ subject_id: subjectId, page: "1", page_size: "1" });
             const data = await api("/api/question-bank?" + params.toString());
@@ -4140,7 +4208,17 @@ document.addEventListener("DOMContentLoaded", function () {
     if (qbPyqSubject) {
         qbPyqSubject.addEventListener("change", function () {
             qbMarksGroup.value = "";
-            loadQuestionBankMarks(qbPyqSubject.value);
+            const currentSearch = (document.getElementById("qbSearch")?.value || "").trim();
+            if (currentSearch) {
+                const tbody = document.getElementById("pyqQuestionsTableBody");
+                if (tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell loading"><span class="spinner"></span> Loading…</td></tr>';
+                const pagination = document.getElementById("pyqQuestionsPagination");
+                if (pagination) pagination.style.display = "none";
+                loadQuestionBankMarks(qbPyqSubject.value).catch(function () {});
+                loadPyqQuestions(true).catch(function () {});
+            } else {
+                loadQuestionBankMarks(qbPyqSubject.value);
+            }
         });
     }
 
@@ -4162,6 +4240,14 @@ document.addEventListener("DOMContentLoaded", function () {
             pyqQuestionsPage = 1;
             loadPyqQuestions(false).catch(function () {});
         });
+    }
+
+    const qbSearchInput = document.getElementById("qbSearch");
+    if (qbSearchInput) {
+        qbSearchInput.addEventListener("input", debounce(function () {
+            pyqQuestionsPage = 1;
+            loadPyqQuestions(true).catch(function () {});
+        }, 350));
     }
 
     if (qbPyqPrev) {
