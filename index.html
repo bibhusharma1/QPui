@@ -30,7 +30,6 @@
 <symbol id="icon-teachers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
                     <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
 <symbol id="icon-profile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
-<symbol id="icon-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
 <symbol id="icon-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
 <symbol id="icon-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
 <symbol id="icon-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
@@ -214,7 +213,6 @@
                     PYQs
                 </a>
 
-
                 <a class="nav-item" href="/generate-paper"
                         data-page="teacher-generate">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
@@ -239,12 +237,6 @@
                         data-page="teacher-profile">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-profile"/></svg>
                     Profile
-                </a>
-
-                <a class="nav-item" href="/help"
-                        data-page="teacher-help">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-question"/></svg>
-                    Help
                 </a>
 
             </nav>
@@ -283,12 +275,6 @@
                     PYQs
                 </a>
 
-                <a class="nav-item" href="/generate-paper"
-                        data-page="teacher-generate">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
-                    Generate Question Paper
-                </a>
-
                 <a class="nav-item" href="/my-papers"
                         data-page="admin-papers">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-papers"/></svg>
@@ -306,10 +292,10 @@
             <div class="sidebar-footer" style="margin-top:auto; padding: 0.75rem 1rem; border-top: 1px solid rgba(148,163,184,0.2);">
                 <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.75rem;">
                     <div style="display:flex; align-items:center; justify-content:space-between;">
-                        <span style="opacity:0.8;">Backend</span>
+                        <span style="opacity:0.8;">API target</span>
                         <select id="backendTargetSelect" style="font-size:0.75rem; padding:0.25rem 0.4rem;">
                             <option value="production">Production (Render)</option>
-                            <option value="local">Local (Docker)</option>
+                            <option value="local">Local API (localhost:8000)</option>
                         </select>
                     </div>
                     <div id="backendTargetDisplay" style="opacity:0.7; font-size:0.7rem;"></div>
@@ -515,28 +501,6 @@
 
                         </div>
 
-
-                        <div class="content-card">
-
-                            <div class="card-header">
-                                <div>
-                                    <h3>Recent Activity</h3>
-                                    <p>Your latest actions.</p>
-                                </div>
-                            </div>
-
-                            <div class="activity-list" id="activityList">
-
-                                <div class="empty-state">
-                                    <div class="empty-icon">◷</div>
-                                    <p>
-                                        Activity feed is unavailable because the backend has no activity endpoint.
-                                    </p>
-                                </div>
-
-                            </div>
-
-                        </div>
 
                     </div>
 
@@ -1188,21 +1152,6 @@
 
                     </div>
 
-                    <div class="content-card">
-
-                        <div class="card-header">
-                            <div>
-                                <h3>Draft listing</h3>
-                                <p>
-                                    Drafts can be created and exported, but the backend does not provide a listing endpoint.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div id="draftPapersList"></div>
-
-                    </div>
-
                 </section>
 
 
@@ -1330,62 +1279,6 @@
 
 
                 <!-- =============================================
-                     HELP
-                ============================================== -->
-                <section
-                    id="teacher-help"
-                    class="page-section hidden">
-
-                    <div class="section-header">
-
-                        <div>
-                            <h1>Help</h1>
-
-                            <p>
-                                Learn how to use the question paper
-                                generation system.
-                            </p>
-                        </div>
-
-                    </div>
-
-                    <div class="help-grid">
-
-                        <div class="content-card">
-                            <h3>How do I upload PYQs?</h3>
-
-                            <p>
-                                Open PYQs from the sidebar and upload PDF files.
-                                The backend processes PDFs and extracts
-                                questions for historical analysis.
-                            </p>
-                        </div>
-
-                        <div class="content-card">
-                            <h3>How is weightage calculated?</h3>
-
-                            <p>
-                                Historical frequency, marks and recency
-                                can be used to calculate topic weightage.
-                            </p>
-                        </div>
-
-                        <div class="content-card">
-                            <h3>How do I generate a paper?</h3>
-
-                            <p>
-                                Open Generate Question Paper, select
-                                your subject and configure the paper
-                                structure before generating.
-                            </p>
-                        </div>
-
-                    </div>
-
-                </section>
-
-
-                <!-- =============================================
                      ADMIN DASHBOARD
                 ============================================== -->
                 <section
@@ -1436,20 +1329,6 @@
                     <div class="quick-grid">
 
                         <button
-                            class="quick-card primary"
-                            data-go="teacher-generate">
-
-                            <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
-
-                            <strong>Generate Question Paper</strong>
-
-                            <small>
-                                Create a question paper from the available question bank.
-                            </small>
-
-                        </button>
-
-                        <button
                             class="quick-card"
                             data-go="admin-teachers">
 
@@ -1458,7 +1337,7 @@
                             <strong>Admin</strong>
 
                             <small>
-                                Switch access mode, authorize and manage teacher accounts.
+                                Manage teacher accounts.
                             </small>
 
                         </button>
@@ -1494,7 +1373,7 @@
                         <div>
                             <h1>Admin</h1>
                             <p>
-                                Administrator access mode and teacher management.
+                                Administrator and teacher management.
                             </p>
                         </div>
 
@@ -1504,48 +1383,10 @@
 
                     </div>
 
-                    <div class="access-mode-panel" aria-labelledby="accessModeHeading">
-
-                        <div class="access-mode-info">
-                            <h3 id="accessModeHeading">Access Mode</h3>
-                            <p>
-                                Read-only view lets you inspect subjects, the question bank, PYQs and papers without write actions.
-                                Edit Mode restores administrative create, edit and delete operations. The active mode is stored
-                                on the backend for your session.
-                            </p>
-                        </div>
-
-                        <div class="access-mode-controls">
-                            <span class="access-mode-status">Current mode:
-                                <strong id="accessModeStatus">Edit Mode</strong>
-                            </span>
-                            <div class="access-mode-buttons" role="radiogroup" aria-label="Access mode">
-                                <button
-                                    type="button"
-                                    class="btn access-mode-btn"
-                                    id="accessModeReadOnly"
-                                    role="radio"
-                                    aria-checked="false">
-                                    Read-only Mode
-                                </button>
-                                <button
-                                    type="button"
-                                    class="btn access-mode-btn"
-                                    id="accessModeEdit"
-                                    role="radio"
-                                    aria-checked="true">
-                                    Edit Mode
-                                </button>
-                            </div>
-                            <p class="access-mode-note hidden" id="accessModeNotice"></p>
-                        </div>
-
-                    </div>
-
                     <div class="content-card" id="teacherManagementCard">
                         <h3>Teacher Management</h3>
-                        <p class="access-mode-hint">
-                            Teacher records are managed from here. Authorization, editing and removal follow the selected access mode.
+                        <p>
+                            Teacher records are managed from here.
                         </p>
 
                     <div class="filter-bar">
@@ -1555,11 +1396,10 @@
                             placeholder="Search teachers..."
                             id="teacherSearch">
 
-                        <select id="teacherStatusFilter">
+                        <select id="teacherStatusFilter" aria-label="Filter teachers by authorization status">
                             <option value="">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="approved">Authorized</option>
-                            <option value="disapproved">Unauthorized</option>
+                            <option value="authorized">Authorized</option>
+                            <option value="unauthorized">Unauthorized</option>
                         </select>
 
                     </div>
@@ -2041,15 +1881,6 @@
                     <label for="teacherPassword">Password <small>(leave blank to keep unchanged)</small></label>
                     <input type="password" id="teacherPassword" autocomplete="new-password" minlength="8" placeholder="••••••••">
                     <span class="field-error" id="teacherPasswordError"></span>
-                </div>
-                <div class="form-group">
-                    <label for="teacherStatus">Account status</label>
-                    <select id="teacherStatus">
-                        <option value="pending">Pending</option>
-                        <option value="approved">Authorized</option>
-                        <option value="disapproved">Unauthorized</option>
-                    </select>
-                    <span class="field-error" id="teacherStatusError"></span>
                 </div>
             </div>
         </div>

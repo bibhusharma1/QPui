@@ -272,7 +272,6 @@ button, .btn { transition: transform 160ms ease, box-shadow 160ms ease, backgrou
 }
 
 /* Admin teacher management */
-#teacherManagementCard > .access-mode-hint { margin-bottom: 18px; }
 #teacherManagementCard .filter-bar { margin-bottom: 20px; }
 .teacher-cards-list { display: grid; gap: 16px; min-width: 0; }
 .teacher-cards-list > .empty-state { margin: 0; }

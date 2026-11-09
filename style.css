@@ -1561,49 +1561,6 @@ td.actions-cell {
     flex-direction: column;
 }
 
-.activity-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border);
-}
-
-.activity-item:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
-}
-
-.activity-item > span {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: var(--primary-light);
-    color: var(--primary);
-    font-size: 13px;
-    flex-shrink: 0;
-}
-
-.activity-item div {
-    min-width: 0;
-}
-
-.activity-item strong {
-    display: block;
-    font-size: 13.5px;
-}
-
-.activity-item small {
-    display: block;
-    color: var(--muted);
-    font-size: 12px;
-    margin-top: 2px;
-}
-
 /* ---------- Extracted questions ---------- */
 
 #extractedList {
@@ -1717,25 +1674,6 @@ td.actions-cell {
     display: block;
     font-size: 13.5px;
     overflow-wrap: anywhere;
-}
-
-/* ---------- Help ---------- */
-
-.help-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-    gap: 16px;
-}
-
-.help-grid h3 {
-    font-size: 15px;
-    margin-bottom: 8px;
-}
-
-.help-grid p {
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1.65;
 }
 
 /* ---------- Generation form ---------- */
@@ -3111,7 +3049,7 @@ dialog#questionEditorModal[open] { align-items: stretch; }
 .draft-review-table .dr-col-text { width: auto; }
 .draft-review-table .dr-col-marks { width: 9%; text-align: center; }
 .draft-review-table .dr-col-figure { width: 13%; text-align: center; }
-.draft-review-table .dr-col-actions { width: 19%; }
+.draft-review-table .dr-col-actions { width: 16%; }
 .draft-review-table td:nth-child(3) { text-align: center; }
 .draft-review-table td:nth-child(4) { text-align: center; }
 .draft-review-table .dr-number-cell { font-weight: 600; }
@@ -3697,149 +3635,6 @@ dialog#questionEditorModal {
     }
 }
 
-/* =========================================================
-    11. ADMIN ACCESS MODE
-    Read-only vs Edit mode, resolved from the backend session.
- ========================================================= */
-
-/* ---------- Read-only mode: hide write actions ---------- */
-
-body.access-readonly #addQuestionBankButton,
-body.access-readonly #addDraftQuestionButton,
-body.access-readonly .qb-edit-question,
-body.access-readonly #createSubjectForm,
-body.access-readonly [data-subject-action="rename"],
-body.access-readonly [data-subject-action="remove"],
-body.access-readonly #addTeacherButton,
-body.access-readonly [data-teacher-action],
-body.access-readonly #teacher-pyqs label.file-button,
-body.access-readonly [data-action="process"],
-body.access-readonly [data-action="review"],
-body.access-readonly [data-action="remove"],
-body.access-readonly #addSectionButton,
-body.access-readonly .section-remove,
-body.access-readonly .section-up,
-body.access-readonly .section-down,
-body.access-readonly #newBlueprintButton,
-body.access-readonly #duplicateBlueprintButton,
-body.access-readonly #renameBlueprintButton,
-body.access-readonly #deleteBlueprintButton,
-body.access-readonly #saveBlueprintButton,
-body.access-readonly #newConfigButton,
-body.access-readonly #saveConfigButton,
-body.access-readonly #duplicateConfigButton,
-body.access-readonly #renameConfigButton,
-body.access-readonly #setDefaultConfigButton,
-body.access-readonly #deleteConfigButton,
-body.access-readonly .add-bank-question,
-body.access-readonly #generatePaperForm button[type="submit"] {
-    display: none !important;
-}
-
-/* ---------- Access mode panel on the Admin page ---------- */
-
-.access-mode-panel {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 18px 28px;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin: 0 0 18px;
-    padding: 20px 22px;
-    background: var(--glass-card);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-}
-
-.access-mode-info {
-    min-width: 260px;
-    max-width: 560px;
-}
-
-.access-mode-info h3 {
-    margin: 0 0 8px;
-}
-
-.access-mode-info p {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 1.6;
-}
-
-.access-mode-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-width: 240px;
-}
-
-.access-mode-status {
-    color: var(--text-secondary);
-    font-size: 13px;
-}
-
-.access-mode-status strong {
-    color: var(--text);
-}
-
-body.access-readonly #accessModeStatus {
-    color: var(--danger);
-}
-
-.access-mode-buttons {
-    display: inline-flex;
-    gap: 8px;
-}
-
-.access-mode-btn {
-    border: 1px solid var(--border);
-    background: var(--glass-elevated);
-    color: var(--text-secondary);
-}
-
-.access-mode-btn:hover {
-    border-color: var(--border-strong);
-    color: var(--text);
-}
-
-.access-mode-btn[aria-checked="true"] {
-    background: linear-gradient(135deg, #7166e8, #5550cb);
-    border-color: transparent;
-    color: #fff;
-}
-
-body.access-readonly .access-mode-btn[aria-checked="true"] {
-    background: color-mix(in srgb, var(--danger) 12%, var(--glass-elevated));
-    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
-    color: var(--danger);
-}
-
-.access-mode-btn:disabled {
-    opacity: .55;
-    cursor: progress;
-}
-
-.access-mode-note {
-    margin: 0;
-    color: var(--warning);
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.access-mode-hint {
-    margin: 6px 0 0;
-    color: var(--text-secondary);
-    font-size: 12.5px;
-}
-
-@media (max-width: 700px) {
-    .access-mode-panel {
-        flex-direction: column;
-    }
-}
-
 /* Teacher Management table layout */
 .teacher-management-table {
     table-layout: fixed;
@@ -3854,11 +3649,11 @@ body.access-readonly .access-mode-btn[aria-checked="true"] {
     overflow-wrap: anywhere;
 }
 
-.teacher-management-table .teacher-col-name { width: 20%; }
+.teacher-management-table .teacher-col-name { width: 21%; }
 .teacher-management-table .teacher-col-email { width: 34%; }
-.teacher-management-table .teacher-col-role { width: 12%; }
-.teacher-management-table .teacher-col-status { width: 12%; }
-.teacher-management-table .teacher-col-subjects { width: 10%; }
+.teacher-management-table .teacher-col-role { width: 14%; }
+.teacher-management-table .teacher-col-status { width: 17%; }
+.teacher-management-table .teacher-col-subjects { width: 14%; }
 
 .teacher-management-table td.teacher-cell-name,
 .teacher-management-table td.teacher-cell-email {

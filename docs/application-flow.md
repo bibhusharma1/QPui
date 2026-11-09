@@ -31,6 +31,6 @@
 - `teacher-questions` requires `manageBank` or `accessPapers`.
 - `teacher-generate` sets `window.__restrictGeneratePage` based on `generate`.
 
-## 6. Admin access mode
+## 6. Removed feature: Access Mode
 
-Admins have an Edit/Read-only mode persisted on the backend via `/auth/access-mode`. Read-only mode adds `access-readonly` to `<body>` and hides write actions. If the endpoint is missing, the UI defaults to Edit Mode and shows a notice. See `docs/authentication-permissions.md`.
+The Access Mode (Edit/Read-only) feature has been removed from the frontend. Administrator capabilities are now governed solely by role-based permissions.

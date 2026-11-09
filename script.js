@@ -628,16 +628,55 @@ document.addEventListener("DOMContentLoaded", function () {
     let currentUserAssignments = null;
     let currentUserPermissions = {};
 
+    function assignmentSubjectName(assignment) {
+        if (typeof assignment === "string") return assignment.trim();
+        if (!assignment || typeof assignment !== "object") return "";
+        const subject = assignment.subject;
+        if (subject && typeof subject === "object") return assignmentSubjectName(subject);
+        return String(assignment.subject_name || assignment.subjectName || subject || assignment.name || assignment.subject_id || "").trim();
+    }
+
+    function teacherAssignmentRecords(response) {
+        let assignments = response;
+        if (!Array.isArray(assignments) && assignments && typeof assignments === "object") {
+            assignments = assignments.assignments ?? assignments.subjects ?? assignments.data;
+            if (assignments && !Array.isArray(assignments) && typeof assignments === "object") {
+                assignments = assignments.assignments ?? assignments.subjects;
+            }
+        }
+        if (!Array.isArray(assignments)) {
+            throw new Error("The assigned-subject response has an unsupported format.");
+        }
+        return assignments;
+    }
+
+    function teacherPyqSubjectNames(response) {
+        return Array.from(new Set(teacherAssignmentRecords(response).map(function (assignment) {
+            if (assignment && typeof assignment === "object" && assignment.subject && typeof assignment.subject === "object") {
+                return assignmentSubjectName(assignment.subject);
+            }
+            return assignmentSubjectName(assignment);
+        }).filter(Boolean))).sort(function (a, b) {
+            return a.localeCompare(b);
+        });
+    }
+
+    async function loadTeacherPyqSubjects() {
+        // This endpoint scopes the result to the authenticated teacher.
+        const response = await api("/teachers/me/subjects");
+        return teacherPyqSubjectNames(response);
+    }
+
     async function loadCurrentUserAssignments() {
         if (!currentUser) return;
         try {
-            const data = await api(`/users/${currentUser.id || currentUser.user_id}/subjects`);
+            const data = await api("/teachers/me/subjects");
             currentUserAssignments = data;
             // Build permissions map
-            const assignments = data.assignments || data.subjects || data.data || [];
+            const assignments = teacherAssignmentRecords(data);
             currentUserPermissions = {};
             (Array.isArray(assignments) ? assignments : []).forEach(a => {
-                const subj = a.subject_id || a.subject || a.subjectName;
+                const subj = assignmentSubjectName(a);
                 if (subj) {
                     currentUserPermissions[subj] = {
                         accessPapers: a.access_question_papers ?? a.accessPapers ?? a.permissions?.accessPapers ?? a.permissions?.questionPapers ?? true,
@@ -647,27 +686,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     };
                 }
             });
+            return true;
         } catch (error) {
-            try {
-                const data = await api(`/teachers/me/subjects`);
-                currentUserAssignments = data;
-                const assignments = data.assignments || data.subjects || [];
-                currentUserPermissions = {};
-                (Array.isArray(assignments) ? assignments : []).forEach(a => {
-                    const subj = a.subject_id || a.subject || a.subjectName;
-                    if (subj) {
-                        currentUserPermissions[subj] = {
-                            accessPapers: a.access_question_papers ?? a.accessPapers ?? true,
-                            uploadProcess: a.upload_process ?? a.uploadProcess ?? true,
-                            manageBank: a.manage_question_bank ?? a.manageBank ?? true,
-                            generate: a.generate_papers ?? a.generatePapers ?? true
-                        };
-                    }
-                });
-            } catch (e) {
-                currentUserAssignments = null;
-                currentUserPermissions = {};
-            }
+            currentUserAssignments = null;
+            currentUserPermissions = {};
+            return false;
         }
     }
 
@@ -677,7 +700,6 @@ document.addEventListener("DOMContentLoaded", function () {
             currentUser = await apiRequest("/auth/me");
             updateUserUI();
             applyRoleUI();
-            if (isAdminUser()) await loadAdminAccessMode();
             if (!isAdminUser()) {
                 await loadCurrentUserAssignments();
             }
@@ -692,120 +714,17 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    /* ADMIN ACCESS MODE
-       The active mode is owned by the backend session (S32): GET
-       /auth/access-mode returns the persisted mode, PUT persists a change.
-       No access-mode state is stored client-side — only the last value the
-       backend confirmed is kept in memory. While S32 is missing, the
-       documented fallback applies (same precedent as the /auth/me role
-       fallback): administrators get Edit Mode. */
-
-    let adminAccessMode = "edit";
-    let accessModeBackendAvailable = true;
-    let accessModeSavePending = false;
-
-    function applyAccessModeUI() {
-        document.body.classList.toggle("access-readonly", adminAccessMode === "read_only");
-        const status = document.getElementById("accessModeStatus");
-        if (status) status.textContent = adminAccessMode === "read_only" ? "Read-only Mode" : "Edit Mode";
-        const readOnly = document.getElementById("accessModeReadOnly");
-        const editMode = document.getElementById("accessModeEdit");
-        if (readOnly) readOnly.setAttribute("aria-checked", String(adminAccessMode === "read_only"));
-        if (editMode) editMode.setAttribute("aria-checked", String(adminAccessMode !== "read_only"));
-        const notice = document.getElementById("accessModeNotice");
-        if (notice) {
-            if (!accessModeBackendAvailable) {
-                notice.textContent = "The access-mode endpoint (S32) is not available on the backend yet, so the session default (Edit Mode) is shown. Mode changes cannot be persisted until it ships.";
-                notice.classList.remove("hidden");
-            } else {
-                notice.classList.add("hidden");
-                notice.textContent = "";
-            }
-        }
-    }
-
-    function setAccessModeButtonsDisabled(disabled) {
-        ["accessModeReadOnly", "accessModeEdit"].forEach(function (id) {
-            const button = document.getElementById(id);
-            if (button) button.disabled = disabled;
-        });
-    }
-
-    async function loadAdminAccessMode() {
-        if (!isAdminUser()) {
-            adminAccessMode = "edit";
-            accessModeBackendAvailable = true;
-            document.body.classList.remove("access-readonly");
-            return;
-        }
-        try {
-            const data = await api("/auth/access-mode");
-            adminAccessMode = (data && data.mode === "read_only") ? "read_only" : "edit";
-            accessModeBackendAvailable = true;
-        } catch (error) {
-            adminAccessMode = "edit";
-            accessModeBackendAvailable = false;
-        }
-        applyAccessModeUI();
-    }
-
-    async function setAdminAccessMode(mode) {
-        if (accessModeSavePending || mode === adminAccessMode) { applyAccessModeUI(); return; }
-        accessModeSavePending = true;
-        setAccessModeButtonsDisabled(true);
-        try {
-            const data = await api("/auth/access-mode", { method: "PUT", body: { mode: mode } });
-            adminAccessMode = (data && data.mode === "read_only") ? "read_only" : "edit";
-            accessModeBackendAvailable = true;
-            applyAccessModeUI();
-            showToast(mode === "read_only"
-                ? "Read-only mode active. Write actions are hidden."
-                : "Edit mode active. Administrative actions are restored.");
-        } catch (error) {
-            applyAccessModeUI();
-            if (error.status === 403) {
-                showToast("Your account does not have permission to change the access mode.");
-            } else if (error.status === 404 || error.status === 405 || error.status === 501) {
-                accessModeBackendAvailable = false;
-                applyAccessModeUI();
-                showToast("Mode not changed: " + error.message);
-            } else {
-                showToast(error.message);
-            }
-        } finally {
-            accessModeSavePending = false;
-            setAccessModeButtonsDisabled(false);
-        }
-    }
-
-    const accessModeReadOnlyButton = document.getElementById("accessModeReadOnly");
-    const accessModeEditButton = document.getElementById("accessModeEdit");
-
-    if (accessModeReadOnlyButton) {
-        accessModeReadOnlyButton.addEventListener("click", function () {
-            setAdminAccessMode("read_only");
-        });
-    }
-
-    if (accessModeEditButton) {
-        accessModeEditButton.addEventListener("click", function () {
-            setAdminAccessMode("edit");
-        });
-    }
-
     function applyRoleUI() {
-        const isAdmin = Boolean(currentUser && currentUser.role === "admin");
+        const isAdmin = isAdminUser();
         if (teacherNavigation) teacherNavigation.classList.toggle("hidden", isAdmin);
         if (adminNavigation) adminNavigation.classList.toggle("hidden", !isAdmin);
 
         document.querySelectorAll("[data-admin]").forEach(function (element) {
             element.classList.toggle("hidden", !isAdmin);
         });
-        ["createSubjectForm", "pyqUpload"].forEach(function (id) {
-            const element = document.getElementById(id);
-            if (element) (id === "pyqUpload" ? element.closest("label") : element)?.classList.toggle("hidden", !isAdmin);
-        });
-        document.querySelectorAll('#teacherNavigation [data-page="teacher-subjects"], #teacherNavigation [data-page="teacher-pyqs"]').forEach(element => element.classList.toggle("hidden", !isAdmin));
+        const subjectForm = document.getElementById("createSubjectForm");
+        if (subjectForm) subjectForm.classList.toggle("hidden", !isAdmin);
+        document.querySelectorAll('#teacherNavigation [data-page="teacher-subjects"]').forEach(element => element.classList.toggle("hidden", !isAdmin));
 
         const role = currentUser ? currentUser.role : "—";
 
@@ -879,17 +798,13 @@ document.addEventListener("DOMContentLoaded", function () {
             title: "Profile",
             subtitle: "Manage your profile information"
         },
-        "teacher-help": {
-            title: "Help",
-            subtitle: "Get help with the question paper generator"
-        },
         "admin-dashboard": {
             title: "Admin Dashboard",
             subtitle: "Manage the question paper generation system"
         },
         "admin-teachers": {
             title: "Admin",
-            subtitle: "Access mode and teacher management"
+            subtitle: "Teacher management"
         },
         "admin-subjects": {
             title: "Subjects",
@@ -917,14 +832,35 @@ document.addEventListener("DOMContentLoaded", function () {
         "teacher-dashboard": loadSubjects,
         "teacher-subjects": loadSubjects,
         "teacher-pyqs": function () {
-            return ensureSubjectsLoaded().then(function () {
-                return loadPdfList();
-            });
+            return loadPyqPage();
         },
         "teacher-generate": function () {
             return loadSubjects().then(function () { return loadBlueprints(); }).then(function () { return loadSavedConfigs(); });
         },
-        "teacher-questions": function () { return loadSubjects().then(function () { return loadPyqQuestions(true); }); },
+        "teacher-questions": function () {
+            return loadSubjects().then(function () {
+                const subjectSelect = document.getElementById("qbPyqSubject");
+                const addButton = document.getElementById("addQuestionBankButton");
+                if (!isAdminUser() && !subjectsCache.length) {
+                    if (subjectSelect) {
+                        subjectSelect.innerHTML = '<option value="">No subjects assigned yet</option>';
+                        subjectSelect.disabled = true;
+                    }
+                    if (addButton) addButton.disabled = true;
+                    const tbody = document.getElementById("pyqQuestionsTableBody");
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="1" class="state-cell">No subjects have been assigned. Ask your administrator to assign a subject before managing questions.</td></tr>';
+                    const summary = document.getElementById("pyqQuestionsSummary");
+                    if (summary) summary.textContent = "No subjects have been assigned.";
+                    const pagination = document.getElementById("pyqQuestionsPagination");
+                    if (pagination) pagination.style.display = "none";
+                    renderQuestionBankReview(null);
+                    return;
+                }
+                if (subjectSelect) subjectSelect.disabled = false;
+                if (addButton) addButton.disabled = false;
+                return loadPyqQuestions(true);
+            });
+        },
         "teacher-papers": loadPapers,
         "admin-papers": loadPapers,
         "admin-teachers": loadTeachers,
@@ -979,7 +915,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "teacher-generate": "/generate-paper", "teacher-papers": "/my-papers",
         "admin-papers": "/my-papers", "admin-teachers": "/teachers",
         "teacher-profile": "/profile", "admin-profile": "/profile",
-        "teacher-help": "/help", "admin-activity": "/activity"
+        "admin-activity": "/activity"
     };
     const pageLoaded = new Set();
     let activePageId = null;
@@ -992,7 +928,8 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         if (!pages.length) return null;
         const admin = isAdminUser();
-        if (!admin && ["/teachers", "/activity", "/subjects", "/pyqs"].includes(path)) return null;
+        if (admin && path === "/generate-paper") return null;
+        if (!admin && ["/teachers", "/activity", "/subjects"].includes(path)) return null;
         const preferred = pages.find(function (pageId) {
             return admin ? pageId.indexOf("admin-") === 0 : pageId.indexOf("teacher-") === 0;
         });
@@ -1043,26 +980,21 @@ document.addEventListener("DOMContentLoaded", function () {
             showLoginPage();
             return;
         }
+        if (isAdminUser() && pageId === "teacher-generate") {
+            navigateToPage("admin-dashboard", { replace: true });
+            return;
+        }
         hidePageAccessRestriction();
 
-        // Check permissions for teachers
-        if (!isAdminUser()) {
+        // Administrators do not use teacher assignment permissions. Clear any
+        // restriction left by a prior teacher session before opening the shared
+        // generation page.
+        if (isAdminUser()) {
+            window.__restrictGeneratePage = false;
+        } else {
+            // Check permissions for teachers
             try {
                 const perms = currentUserPermissions || {};
-                if (pageId === "teacher-pyqs") {
-                    const hasPerm = Object.values(perms).some(p => p && p.uploadProcess);
-                    if (!hasPerm && Object.keys(perms).length > 0) {
-                        showToast("You don't have permission to upload/process question papers.");
-                        return navigateToPage("teacher-dashboard");
-                    }
-                }
-                if (pageId === "teacher-questions") {
-                    const hasPerm = Object.values(perms).some(p => p && (p.manageBank || p.accessPapers));
-                    if (!hasPerm && Object.keys(perms).length > 0) {
-                        showToast("You don't have permission to access question bank.");
-                        return navigateToPage("teacher-dashboard");
-                    }
-                }
                 if (pageId === "teacher-generate") {
                     const hasPerm = Object.values(perms).some(p => p && p.generate);
                     if (!hasPerm && Object.keys(perms).length > 0) {
@@ -1143,8 +1075,14 @@ document.addEventListener("DOMContentLoaded", function () {
             fetchPapers().catch(function () {});
         }
 
-        if (pageId === "teacher-pyqs" && pageLoaded.has(pageId) && typeof loadPdfList === "function") {
-            loadPdfList().catch(function () {});
+        if (pageId === "teacher-questions" && pageLoaded.has(pageId) && pageLoaders[pageId]) {
+            Promise.resolve(pageLoaders[pageId]()).catch(function (error) {
+                showToast(error.message);
+            });
+        }
+
+        if (pageId === "teacher-pyqs" && pageLoaded.has(pageId) && typeof loadPyqPage === "function") {
+            loadPyqPage().catch(function () {});
         }
 
         if (window.innerWidth < 1024) {
@@ -1760,8 +1698,6 @@ document.addEventListener("DOMContentLoaded", function () {
             currentUser = null;
             currentUserAssignments = null;
             currentUserPermissions = {};
-            adminAccessMode = "edit";
-            accessModeBackendAvailable = true;
             clearAllSessions();
 
             if (loginForm) loginForm.reset();
@@ -1806,18 +1742,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 const data = await api("/subjects");
                 subjectsCache = data.subjects || [];
             } else {
-                // Teachers cannot enumerate /subjects (admin-only). Use only subject IDs
-                // already present in their documented, authenticated blueprint records.
-                const data = await api("/blueprints");
-                blueprints = data.items || [];
-                blueprintsLoaded = true;
-                let assignedFromPerms = [];
-                try {
-                    if (!isAdminUser() && currentUserPermissions) {
-                        assignedFromPerms = Object.keys(currentUserPermissions).filter(k => currentUserPermissions[k]);
-                    }
-                } catch (e) {}
-                subjectsCache = Array.from(new Set([...(blueprints.map(item => item.subject_id).filter(Boolean)), ...assignedFromPerms]));
+                if (!await loadCurrentUserAssignments()) {
+                    throw new Error("Could not load your assigned subjects. Refresh the page to try again.");
+                }
+                // Teachers cannot enumerate /subjects (admin-only). Use only subject
+                // names from their authenticated assignment records in selectors.
+                const assignedFromPerms = Object.keys(currentUserPermissions || {});
+                subjectsCache = Array.from(new Set(assignedFromPerms));
                 if (grid) grid.innerHTML = stateHTML("▣", "Subjects assigned to you.");
                 if (subjectsCache.length) {
                     if (dashList) {
@@ -1935,6 +1866,67 @@ document.addEventListener("DOMContentLoaded", function () {
 
     /* PDF PIPELINE */
 
+    async function loadPyqPage() {
+        const subjectSelect = document.getElementById("pyqSubject");
+        if (!subjectSelect) return;
+
+        let availableSubjects;
+        if (isAdminUser()) {
+            await loadSubjects();
+            availableSubjects = subjectsCache.slice();
+            subjectSelect.disabled = false;
+            const upload = document.getElementById("pyqUpload");
+            if (upload) upload.disabled = false;
+            fillSubjectSelect(subjectSelect, '<option value="">Select subject</option>');
+        } else {
+            // Ignore any PDF response started under a previous assignment set.
+            pyqPdfLoadToken += 1;
+            try {
+                availableSubjects = await loadTeacherPyqSubjects();
+            } catch (error) {
+                subjectSelect.innerHTML = '<option value="">Assigned subjects unavailable</option>';
+                subjectSelect.disabled = true;
+                const upload = document.getElementById("pyqUpload");
+                if (upload) upload.disabled = true;
+                pyqPdfItems = [];
+                pyqPdfLoadToken += 1;
+                const tbody = document.getElementById("pyqTableBody");
+                if (tbody) tbody.innerHTML = tableStateHTML("⚠", "Could not load your assigned subjects: " + (error.message || "Please refresh the page to try again."), "error", 1);
+                return;
+            }
+
+            if (!availableSubjects.length) {
+                subjectSelect.innerHTML = '<option value="">No subjects assigned yet</option>';
+                subjectSelect.disabled = true;
+                const upload = document.getElementById("pyqUpload");
+                if (upload) upload.disabled = true;
+                pyqPdfItems = [];
+                pyqPdfLoadToken += 1;
+                const tbody = document.getElementById("pyqTableBody");
+                if (tbody) tbody.innerHTML = tableStateHTML("▣", "No subjects have been assigned. Ask your administrator to assign a subject before uploading or processing PDFs.", "", 1);
+                return;
+            }
+
+            const selected = availableSubjects.includes(subjectSelect.value) ? subjectSelect.value : availableSubjects[0];
+            subjectSelect.disabled = false;
+            const upload = document.getElementById("pyqUpload");
+            if (upload) upload.disabled = false;
+            subjectSelect.innerHTML = '<option value="">Select subject</option>' + availableSubjects.map(function (subject) {
+                return '<option value="' + escapeHTML(subject) + '">' + escapeHTML(subject) + '</option>';
+            }).join("");
+            subjectSelect.value = selected;
+        }
+
+        if (!availableSubjects.length) {
+            pyqPdfItems = [];
+            const tbody = document.getElementById("pyqTableBody");
+            if (tbody) tbody.innerHTML = tableStateHTML("▣", "No subjects are available.", "", 1);
+            return;
+        }
+
+        await loadPdfList();
+    }
+
     function pdfPath(subject, filename) {
         return "/subjects/" + encodeURIComponent(subject) +
             "/pdfs/" + encodeURIComponent(filename);
@@ -2029,6 +2021,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 return '<button type="button" class="table-action pyq-action ' + (extra || '') + '" data-action="' + key + '"' + (disabled ? ' disabled aria-disabled="true"' : '') + '>' + pyqActionIcon(key) + '<span>' + label + '</span></button>';
             };
             const rowSubject = (item && item.subject) ? item.subject : selectedSubject;
+            details.unshift('<span class="pyq-file-detail"><span class="pyq-detail-label">Subject</span><strong>' + escapeHTML(rowSubject) + '</strong></span>');
             return '<tr class="pyq-file-row" data-file="' + escapeHTML(item.filename) + '" data-subject="' + escapeHTML(rowSubject) + '" data-review="' + escapeHTML(item.review_status || "unreviewed") + '" data-status="' + escapeHTML(normalized) + '">' +
                 '<td><div class="pyq-file-primary"><div class="pyq-file-title"><svg class="pyq-pdf-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span class="pyq-filename" title="' + escapeHTML(item.filename) + '">' + escapeHTML(item.filename) + '</span></div><div class="status-cell">' + statusBadge(item.status) + (reviewed ? ' <span class="status approved">Reviewed</span>' : '') + '</div></div>' +
                 '<div class="pyq-file-secondary"><div class="pyq-file-metadata">' + details.join("") + '</div><div class="pyq-file-actions" aria-label="Actions for ' + escapeHTML(item.filename) + '">' +
@@ -2701,9 +2694,7 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("confirmMessage").textContent = message || "";
             accept.textContent = confirmLabel || "Confirm";
 
-            if (confirmLabel === "Authorize") {
-                accept.className = "btn btn-primary";
-            } else if (confirmLabel === "Remove" || confirmLabel === "Unauthorize") {
+            if (confirmLabel === "Remove") {
                 accept.className = "btn btn-danger";
             } else {
                 accept.className = "btn btn-primary";
@@ -2765,18 +2756,21 @@ document.addEventListener("DOMContentLoaded", function () {
     let editingTeacherId = null;
     let teachersPage = 1;
     const teachersPageSize = 50;
+    const teacherAuthorizationStatusByAction = Object.freeze({
+        authorize: "authorized",
+        unauthorize: "unauthorized"
+    });
 
     function teacherStatusBadge(status) {
+        const normalized = String(status || "").toLowerCase();
         const map = {
             approved: ["approved", "Authorized"],
-            pending: ["pending", "Pending"],
-            disapproved: ["disapproved", "Unauthorized"]
+            authorized: ["approved", "Authorized"],
+            disapproved: ["disapproved", "Unauthorized"],
+            unauthorized: ["disapproved", "Unauthorized"]
         };
-
-        const entry = map[status] || ["pending", status || "Unknown"];
-
-        return '<span class="status ' + entry[0] + '">' +
-            escapeHTML(entry[1]) + "</span>";
+        const entry = map[normalized] || ["", status || "Unknown"];
+        return '<span class="status ' + entry[0] + '">' + escapeHTML(entry[1]) + '</span>';
     }
 
     async function loadTeachers() {
@@ -2786,7 +2780,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const search = document.getElementById("teacherSearch");
         const statusFilter = document.getElementById("teacherStatusFilter");
-
         const params = new URLSearchParams();
         if (search && search.value.trim()) params.set("search", search.value.trim());
         if (statusFilter && statusFilter.value) params.set("status", statusFilter.value);
@@ -2819,11 +2812,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
         tbody.innerHTML = teachersCache.map(function (teacher) {
             const id = escapeHTML(teacher.id);
+            const teacherStatus = String(teacher.status || "").toLowerCase();
             let actions = "";
-            if (teacher.status !== "approved") {
+            if (teacherStatus !== "approved" && teacherStatus !== "authorized") {
                 actions += '<button type="button" class="table-action" data-teacher-action="authorize" data-id="' + id + '">Authorize</button>';
             }
-            if (teacher.status !== "disapproved") {
+            if (teacherStatus !== "disapproved" && teacherStatus !== "unauthorized") {
                 actions += '<button type="button" class="table-action" data-teacher-action="unauthorize" data-id="' + id + '">Unauthorize</button>';
             }
             actions += '<button type="button" class="table-action" data-teacher-action="assign" data-id="' + id + '">Assign Subjects</button>' +
@@ -2877,7 +2871,6 @@ document.addEventListener("DOMContentLoaded", function () {
         setValue("teacherName", teacher ? teacher.name : "");
         setValue("teacherEmail", teacher ? teacher.email : "");
         setValue("teacherPassword", teacher ? "" : "admin@123");
-        setValue("teacherStatus", teacher ? (teacher.status || "pending") : "pending");
 
         clearTeacherFormErrors();
         openModal("teacherDialog");
@@ -2894,7 +2887,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let teacherFormSubmitting = false;
 
     function clearTeacherFormErrors() {
-        ["teacherName", "teacherEmail", "teacherPassword", "teacherStatus"].forEach(function (field) {
+        ["teacherName", "teacherEmail", "teacherPassword"].forEach(function (field) {
             const input = document.getElementById(field);
             if (input) input.classList.remove("input-error");
             const err = document.getElementById(field + "Error");
@@ -2928,7 +2921,6 @@ document.addEventListener("DOMContentLoaded", function () {
             const name = document.getElementById("teacherName").value.trim();
             const email = document.getElementById("teacherEmail").value.trim();
             const password = document.getElementById("teacherPassword").value;
-            const status = document.getElementById("teacherStatus").value;
 
             if (!name || !email) {
                 if (!name) applyTeacherFieldError("teacherName", "Teacher name is required.");
@@ -2937,7 +2929,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            const body = { name: name, email: email, status: status };
+            const body = { name: name, email: email };
             // Default password when left blank on create.
             if (password) body.password = password;
             else if (!editingTeacherId) body.password = "admin@123";
@@ -2954,6 +2946,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 } else {
                     await api("/teachers", { method: "POST", body: body });
                     showToast("Teacher created: " + body.name);
+                    teachersPage = 1;
                 }
 
                 closeModal("teacherDialog");
@@ -2972,7 +2965,6 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (field === "email") { applyTeacherFieldError("teacherEmail", msg); handled = true; }
                         else if (field === "password") { applyTeacherFieldError("teacherPassword", msg); handled = true; }
                         else if (field === "name") { applyTeacherFieldError("teacherName", msg); handled = true; }
-                        else if (field === "status") { applyTeacherFieldError("teacherStatus", msg); handled = true; }
                     });
                 } else if (typeof detail === "string") {
                     const lower = detail.toLowerCase();
@@ -2985,7 +2977,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!handled) {
                     showTeacherFormError((error && error.message) ? error.message : "Registration failed. Please try again.");
                 } else {
-                    const anyFieldError = ["teacherName", "teacherEmail", "teacherPassword", "teacherStatus"].some(function (f) {
+                    const anyFieldError = ["teacherName", "teacherEmail", "teacherPassword"].some(function (f) {
                         const e = document.getElementById(f + "Error");
                         return e && e.textContent;
                     });
@@ -3231,25 +3223,34 @@ document.addEventListener("DOMContentLoaded", function () {
             });
 
             if (action === "authorize" || action === "unauthorize") {
-                const status = action === "authorize" ? "approved" : "disapproved";
+                const status = teacherAuthorizationStatusByAction[action];
                 const verb = action === "authorize" ? "Authorize" : "Unauthorize";
                 const statusLabel = action === "authorize" ? "authorized" : "unauthorized";
-                const ok = await confirmAction(
-                    verb + " teacher",
-                    (action === "authorize" ? "Authorize " : "Unauthorize ") +
-                    (teacher ? "\"" + teacher.name + "\"" : "this teacher") + "?",
-                    verb
-                );
-                if (!ok) return;
-
+                const actionGroup = button.closest(".teacher-actions");
+                const statusButtons = actionGroup
+                    ? Array.from(actionGroup.querySelectorAll('[data-teacher-action="authorize"], [data-teacher-action="unauthorize"]'))
+                    : [button];
+                if (statusButtons.some(function (item) { return item.disabled; })) return;
+                statusButtons.forEach(function (item) { item.disabled = true; });
                 try {
-                    await api("/teachers/" + id, {
-                        method: "PATCH", body: { status: status }
+                    const ok = await confirmAction(
+                        verb + " teacher",
+                        verb + " " + (teacher ? '"' + teacher.name + '"' : "this teacher") + "?",
+                        verb
+                    );
+                    if (!ok) return;
+                    await api("/teachers/" + encodeURIComponent(id), {
+                        method: "PATCH",
+                        body: { status: status }
                     });
+                    await loadTeachers();
                     showToast((teacher ? teacher.name : "Teacher") + " " + statusLabel);
-                    loadTeachers().catch(function () {});
                 } catch (error) {
-                    showToast(error.message);
+                    showToast(error && error.message ? error.message : "Could not update teacher authorization status.");
+                } finally {
+                    statusButtons.forEach(function (item) {
+                        if (item.isConnected) item.disabled = false;
+                    });
                 }
             }
 
@@ -3913,7 +3914,6 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        const admin = isAdminUser();
         panel.classList.remove("hidden");
         list.innerHTML = flagged.map(function (item) {
             const qid = item.question_id || "";
@@ -3937,7 +3937,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const marks = item.marks != null
                 ? '<span class="qb-review-marks">' + escapeHTML(String(item.marks)) + ' ' + (Number(item.marks) === 1 ? "mark" : "marks") + '</span>'
                 : "";
-            const actionButtons = !decided && admin
+            const actionButtons = !decided
                 ? '<div class="qb-review-actions">' +
                     '<button type="button" class="btn btn-primary small qb-approve" data-question-id="' + escapeHTML(qid) + '">Approve</button>' +
                     '<button type="button" class="btn btn-danger small qb-reject" data-question-id="' + escapeHTML(qid) + '">Reject</button>' +
@@ -3949,7 +3949,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 '<div class="qb-review-card-top">' + chips + (marks ? marks : "") + '</div>' +
                 '<div class="qb-review-text">' + escapeHTML(text) + '</div>' +
                 reason +
-                (actionButtons || (admin ? "" : '<div class="qb-review-actions-none">Actions require an administrator account.</div>')) +
+                actionButtons +
                 '</div>';
         }).join("");
     }
@@ -4406,7 +4406,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function loadPapers() {
         papersPage = 1;
-        renderDraftPapers();
         return fetchPapers();
     }
 
@@ -4557,26 +4556,21 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function renderDraftPapers() {
-        const list = document.getElementById("draftPapersList");
-        if (list) list.innerHTML = stateHTML("▧", "Saved draft listing is unavailable: the backend does not provide a listing endpoint.", "error");
-    }
-
     /* =============================================
        TEACHER FILTERS
     ============================================== */
 
     const teacherSearchInput = document.getElementById("teacherSearch");
+    const teacherStatusFilter = document.getElementById("teacherStatusFilter");
 
     if (teacherSearchInput) {
         teacherSearchInput.addEventListener("input", debounce(function () { teachersPage = 1; loadTeachers(); }, 350));
     }
 
-    const teacherStatusFilter = document.getElementById("teacherStatusFilter");
-
     if (teacherStatusFilter) {
         teacherStatusFilter.addEventListener("change", function () { teachersPage = 1; loadTeachers(); });
     }
+
     document.getElementById("teachersPrev")?.addEventListener("click", function () { if (teachersPage > 1) { teachersPage -= 1; loadTeachers(); } });
     document.getElementById("teachersNext")?.addEventListener("click", function () { teachersPage += 1; loadTeachers(); });
 
@@ -5339,9 +5333,6 @@ document.addEventListener("DOMContentLoaded", function () {
                         '<div class="draft-row-actions">' +
                         '<button type="button" class="btn btn-secondary small icon-button draft-edit" data-si="' + si + '" data-qi="' + qi + '" title="Edit question" aria-label="Edit question"><svg class="btn-icon" aria-hidden="true"><use href="#icon-edit"/></svg></button> ' +
                         '<button type="button" class="btn btn-secondary small draft-source" data-si="' + si + '" data-qi="' + qi + '" title="View source" aria-label="View source"><svg class="btn-icon" aria-hidden="true"><use href="#icon-file"/></svg>Source</button> ' +
-                        '<button type="button" class="btn btn-secondary small draft-up" data-si="' + si + '" data-qi="' + qi + '">Up</button> ' +
-                        '<button type="button" class="btn btn-secondary small draft-down" data-si="' + si + '" data-qi="' + qi + '">Down</button> ' +
-                        '<button type="button" class="btn btn-secondary small draft-regenerate" data-si="' + si + '" data-qi="' + qi + '">Regenerate</button> ' +
                         '<button type="button" class="btn btn-danger small draft-remove" data-si="' + si + '" data-qi="' + qi + '">Remove</button>' +
                         '</div>' +
                     '</td>' +
@@ -5391,23 +5382,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return ok;
     }
 
-    async function moveDraftQuestion(si, qi, delta) {
-        if (!generatedDraft) return;
-        const section = generatedDraft.sections[si];
-        if (!section) return;
-        const targetIndex = qi + delta;
-        if (targetIndex < 0 || targetIndex >= section.questions.length) return;
-        const ids = generatedDraft.sections.flatMap(item => item.questions.map(draftQuestionId));
-        const sectionStart = generatedDraft.sections.slice(0, si).reduce((n, item) => n + item.questions.length, 0);
-        const from = sectionStart + qi;
-        const to = sectionStart + targetIndex;
-        [ids[from], ids[to]] = [ids[to], ids[from]];
-        try {
-            generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(generatedDraft.draft_id) + "/question-order", { method: "PUT", body: { question_ids: ids } });
-            renderDraftReview();
-        } catch (error) { showToast(error.message); }
-    }
-
     async function removeDraftQuestion(si, qi) {
         if (!generatedDraft) return;
         const section = generatedDraft.sections[si];
@@ -5417,56 +5391,6 @@ document.addEventListener("DOMContentLoaded", function () {
             generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(generatedDraft.draft_id) + "/questions/" + encodeURIComponent(draftQuestionId(question)), { method: "DELETE" });
             renderDraftReview();
         } catch (error) { showToast(error.message); }
-    }
-
-    async function regenerateDraftQuestion(si, qi) {
-        if (!generatedDraft) return;
-        const section = generatedDraft.sections[si];
-        if (!section) return;
-        const question = section.questions[qi];
-        if (!question) return;
-        const marks = Number(question.marks);
-        const sectionName = section.name;
-        const draftId = generatedDraft.draft_id;
-        const originalGlobalIndex = generatedDraft.sections.slice(0, si).reduce(function (n, item) {
-            return n + (Array.isArray(item.questions) ? item.questions.length : 0);
-        }, 0) + qi;
-        const existingIds = new Set(generatedDraft.sections.flatMap(function (item) {
-            return (item.questions || []).map(draftQuestionId);
-        }));
-        try {
-            await loadQuestionBank(generatedDraft.subject);
-        } catch (e) {}
-        const candidates = (questionBankCache || []).filter(function (item) {
-            if (existingIds.has(item.question_id)) return false;
-            if (!Number.isFinite(marks) || marks <= 0) return true;
-            return Number(item.marks) === marks;
-        });
-        if (!candidates.length) {
-            showToast("No replacement question available with the same marks.");
-            return;
-        }
-        const replacement = candidates[Math.floor(Math.random() * candidates.length)];
-        try {
-            generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/questions/" + encodeURIComponent(draftQuestionId(question)), { method: "DELETE" });
-            generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/questions", { method: "POST", body: { question_id: replacement.question_id, section: sectionName } });
-            // Move the replacement into the original slot when possible.
-            try {
-                const ids = generatedDraft.sections.flatMap(function (item) {
-                    return (item.questions || []).map(draftQuestionId);
-                });
-                const replIndex = ids.indexOf(replacement.question_id);
-                if (replIndex !== -1 && replIndex !== originalGlobalIndex && originalGlobalIndex < ids.length) {
-                    const moved = ids.splice(replIndex, 1)[0];
-                    ids.splice(originalGlobalIndex, 0, moved);
-                    generatedDraft = await api("/api/question-papers/drafts/" + encodeURIComponent(draftId) + "/question-order", { method: "PUT", body: { question_ids: ids } });
-                }
-            } catch (orderError) { /* keep appended position if reorder fails */ }
-            renderDraftReview();
-            showToast("Question regenerated.");
-        } catch (error) {
-            showToast(error.message || "Could not regenerate the question.");
-        }
     }
 
     function changeDraftSection(si, qi, newSectionName) {
@@ -5626,24 +5550,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const draftTableBody = document.getElementById("draftReviewTableBody");
     if (draftTableBody) {
         draftTableBody.addEventListener("click", function (event) {
-            const up = event.target.closest(".draft-up");
-            const down = event.target.closest(".draft-down");
             const remove = event.target.closest(".draft-remove");
             const source = event.target.closest(".draft-source");
             const figure = event.target.closest(".draft-figure");
-            const regenerate = event.target.closest(".draft-regenerate");
-            if (regenerate) {
-                regenerateDraftQuestion(Number(regenerate.getAttribute("data-si")), Number(regenerate.getAttribute("data-qi")));
-                return;
-            }
-            if (up) {
-                moveDraftQuestion(Number(up.getAttribute("data-si")), Number(up.getAttribute("data-qi")), -1);
-                return;
-            }
-            if (down) {
-                moveDraftQuestion(Number(down.getAttribute("data-si")), Number(down.getAttribute("data-qi")), 1);
-                return;
-            }
             if (remove) {
                 removeDraftQuestion(Number(remove.getAttribute("data-si")), Number(remove.getAttribute("data-qi")));
                 return;

@@ -33,13 +33,9 @@ Endpoints used:
 
 Rate limiting (429) uses the `Retry-After` header for a countdown.
 
-## 6. Admin access mode
+## 6. Removed feature: Admin access mode
 
-Admins can switch between Edit Mode and Read-only Mode. The mode is stored on the backend:
-- `GET /auth/access-mode`
-- `PUT /auth/access-mode {mode}` (`"read_only"` or `"edit"`)
-
-If the endpoint is missing, the UI defaults to Edit Mode and shows a notice.
+The Admin access mode (Edit/Read-only) feature has been removed from the frontend. The `/auth/access-mode` endpoints are no longer called. Administrator capabilities are governed by role-based permissions only.
 
 ## 7. Teacher subject assignments and permissions
 

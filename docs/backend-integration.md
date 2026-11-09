@@ -19,8 +19,6 @@ Backend allows origins from `QUES_CORS_ORIGINS` (default `http://localhost:3000,
 | POST | `/auth/login` | Login `{email,password}` |
 | POST | `/auth/totp/verify` | Verify TOTP `{challenge_token,code}` |
 | GET | `/auth/me` | Current user |
-| GET | `/auth/access-mode` | Admin access mode |
-| PUT | `/auth/access-mode` | Set access mode `{mode}` |
 | GET | `/auth/totp/status` | TOTP status |
 | POST | `/auth/totp/enroll` | Start TOTP enrollment |
 | POST | `/auth/totp/confirm` | Confirm TOTP `{code}` |
@@ -113,7 +111,7 @@ Backend allows origins from `QUES_CORS_ORIGINS` (default `http://localhost:3000,
 9. **Drafts listing**: backend has no list endpoint; frontend shows a static note.
 10. **Subject assignments** use `/users/{id}/subjects` and `/teachers/{id}/subjects` with fallbacks; backend status varies.
 11. **Reconciliation controls** (`/admin/reconciliation/*`) are proposed and not implemented; see [reconciliation-contract.md](reconciliation-contract.md).
-12. **Access-mode endpoint** may be missing; UI defaults to Edit Mode.
+12. (Access Mode feature removed from the frontend entirely.)
 
 ## 5. Error handling
 
