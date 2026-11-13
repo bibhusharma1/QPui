@@ -449,7 +449,15 @@ async function apiRequest(path, options = {}) {
 
     const contentType = response.headers.get("Content-Type") || "";
 
-    if (contentType.includes("application/json")) return response.json();
+    if (contentType.includes("application/json")) {
+        try { return await response.json(); }
+        catch (cause) {
+            const error = new Error("Could not read the response data returned by the API.", { cause });
+            error.status = response.status;
+            error.responseParseError = true;
+            throw error;
+        }
+    }
     if (contentType.includes("text/")) return response.text();
     return response.blob();
 }
@@ -575,6 +583,673 @@ document.addEventListener("DOMContentLoaded", function () {
     let cooldownTimer = null;
     let loggingIn = false;
 
+    /* SYLLABUS LIBRARY + AI QUESTION GENERATION
+       These views use the authenticated backend API; permissions are enforced
+       by the API and the UI only reflects the capabilities it returns. */
+    const syllabusState = { items: [], subjects: [], subjectsLoaded: false, selectedSubjectId: "", canUpload: false, permissionReady: false, subjectsLoading: false, subjectsError: null, uploading: false, activeUpload: null, statusPoll: null, replaceExisting: false, replacingRecord: null, recentUpload: null, listRequest: 0, reprocessingIds: new Set() };
+    const aiState = { subjects: [], syllabi: [], syllabusDetails: {}, syllabusSubjectId: "", selectedSyllabusId: "", modules: [], guidance: {}, selectedSubjectId: "", selectedSubjectName: "", jobId: null, jobStatus: "", poll: null, questions: [], selectedItemIds: new Set(), submitting: false };
+    const asArray = value => Array.isArray(value) ? value : (value?.items || value?.results || value?.data || []);
+    const text = value => String(value ?? "");
+    function apiFailureMessage(error, resource) {
+        if (error?.responseParseError || /unsupported subject list response|subject response contains/i.test(error?.message || "")) return "Could not read the subject data returned by the API.";
+        if (error?.status === 403) return "You do not have permission to access these subjects.";
+        if (error?.status === 0 || error instanceof TypeError || /cannot reach server|failed to fetch|networkerror/i.test(error?.message || "")) return "Could not connect to the API server.";
+        if (error?.status === 401) return "Session expired. Please log in again.";
+        if (error?.status === 404) return "The requested information could not be found.";
+        if (error?.status) return `Could not load ${resource}. Please try again.`;
+        return error?.message || `Could not load ${resource}. Please try again.`;
+    }
+    function syllabusRecords(response) {
+        if (Array.isArray(response)) return response;
+        const records = response?.syllabi ?? response?.items ?? response?.data?.syllabi ?? response?.data;
+        if (!Array.isArray(records)) throw new Error("Unsupported syllabus list response.");
+        return records;
+    }
+    function subjectRecords(response) {
+        if (Array.isArray(response)) return response;
+        const records = response?.subject_records ?? response?.data?.subject_records
+            ?? response?.assigned_subjects ?? response?.data?.assigned_subjects
+            ?? response?.subject_assignments ?? response?.data?.subject_assignments
+            ?? response?.assignments ?? response?.data?.assignments
+            ?? response?.subjects ?? response?.items ?? response?.data?.subjects ?? response?.data;
+        if (!Array.isArray(records)) throw new Error("Unsupported subject list response.");
+        return records;
+    }
+    function setSubjectOptions(select, subjects, placeholder, selectedId) {
+        if (!select) return "";
+        select.innerHTML = "";
+        const first = document.createElement("option");
+        first.value = "";
+        first.textContent = placeholder;
+        select.append(first);
+        subjects.forEach(subject => {
+            const option = document.createElement("option");
+            option.value = String(subject.id);
+            option.textContent = subject.name;
+            select.append(option);
+        });
+        const wanted = selectedId == null ? "" : String(selectedId);
+        select.value = subjects.some(subject => String(subject.id) === wanted) ? wanted : "";
+        return select.value;
+    }
+    function formatFileSize(bytes) { if (!Number.isFinite(bytes) || bytes < 0) return "—"; if (bytes < 1024) return `${bytes} B`; const units=["KB","MB","GB"]; let size=bytes/1024, i=0; while(size>=1024 && i<units.length-1){size/=1024;i++;} return `${size.toFixed(1)} ${units[i]}`; }
+    function setOptions(select, values, label) {
+        if (!select) return;
+        select.innerHTML = `<option value="">${label}</option>`;
+        values.forEach(item => {
+            const option = document.createElement("option");
+            option.value = text(item.id ?? item.subject_id ?? item.syllabus_id ?? item.name ?? item.subject ?? item.filename);
+            option.textContent = text(item.name ?? item.subject_name ?? item.syllabus_name ?? item.subject ?? item.title ?? item.filename ?? item);
+            select.append(option);
+        });
+    }
+    function applySyllabusUploadPermission(value) {
+        const button=document.getElementById("syllabusUploadButton"), hint=document.getElementById("syllabusUploadPermissionHint"), icon=document.getElementById("syllabusUploadIcon");
+        syllabusState.canUpload=value===true;
+        updateSyllabusUploadButton();
+        const submit=document.getElementById("syllabusUploadSubmit");
+        if(submit && !syllabusState.canUpload)submit.disabled=true;
+        if(hint){hint.hidden=syllabusState.canUpload;hint.textContent="Syllabus upload is unavailable for this account.";}
+        icon?.setAttribute("href",syllabusState.canUpload?"#icon-upload":"#icon-lock");
+    }
+    function updateSyllabusUploadButton() {
+        const button = document.getElementById("syllabusUploadButton");
+        if (button) {
+            button.disabled = !syllabusState.canUpload;
+            button.title = button.disabled ? "Syllabus upload is unavailable for this account" : "Upload a syllabus PDF";
+            button.setAttribute("aria-label", "Upload PDF");
+        }
+    }
+    function normalizeSyllabusSubjects(response) {
+        const records = subjectRecords(response);
+        const subjects = records.map(record => {
+            if (!record || typeof record !== "object") return null;
+            const id = record.id ?? record.subject_id;
+            const name = record.name ?? record.subject_name;
+            if (id == null || String(id).trim() === "" || name == null || String(name).trim() === "") return null;
+            return {...record, id: String(id), name: String(name).trim()};
+        });
+        if (subjects.some(subject => subject === null)) throw new Error("Subject response contains a record without a database ID or subject name.");
+        return subjects;
+    }
+    async function loadSyllabusSubjects() {
+        const user = currentUser || await api("/auth/me");
+        if (!currentUser) currentUser = user;
+        const role = String(user?.role ?? "").trim().toLowerCase();
+        userRole = role;
+        const admin = role === "admin";
+        if (role !== "admin" && role !== "teacher") throw new Error("The authenticated account has an unsupported role.");
+        syllabusState.subjectsLoading = true;
+        syllabusState.subjectsError = null;
+        if (admin) applySyllabusUploadPermission(true);
+        let response = currentUserAssignments;
+        try {
+        if (!syllabusState.subjectsLoaded) {
+            const filter = document.getElementById("syllabusSubjectFilter");
+            const uploadSelect = document.getElementById("syllabusUploadSubject");
+            setSubjectOptions(filter, [], "Loading subjects...", "");
+            setSubjectOptions(uploadSelect, [], "Loading subjects...", "");
+            if (admin) response = await api("/api/smart-qpg/subjects", {cache:"no-store"});
+            else if (!response) response = await api("/teachers/me/subjects", {cache:"no-store"});
+            if (!admin && !currentUserAssignments) currentUserAssignments = response;
+            const subjects = normalizeSyllabusSubjects(response);
+            syllabusState.subjects = subjects;
+            syllabusState.subjectsLoaded = true;
+        }
+        applySyllabusUploadPermission(admin || (role === "teacher" && syllabusState.subjects.length > 0));
+        const placeholder = syllabusState.subjects.length === 0 && !admin
+            ? "No subjects are assigned to your account."
+            : admin ? "Select a subject" : "Select an assigned subject";
+        const filter = document.getElementById("syllabusSubjectFilter");
+        syllabusState.selectedSubjectId = setSubjectOptions(filter, syllabusState.subjects, placeholder, syllabusState.selectedSubjectId);
+        const uploadSelect = document.getElementById("syllabusUploadSubject");
+        setSubjectOptions(uploadSelect, syllabusState.subjects, placeholder, syllabusState.selectedSubjectId);
+        updateSyllabusUploadButton();
+        const message = document.getElementById("syllabusUploadMessage");
+        if (!admin && !syllabusState.subjects.length && message) message.textContent = "No subjects are assigned to your account";
+        syllabusState.subjectsLoading = false;
+        return user;
+        } catch (error) {
+            syllabusState.subjectsLoading = false;
+            syllabusState.subjectsError = error;
+            throw error;
+        }
+    }
+    function syncSyllabusSubjectSelection(subjectId) {
+        const wanted = subjectId == null ? "" : String(subjectId);
+        const subject = syllabusState.subjects.find(item => String(item.id) === wanted);
+        syllabusState.selectedSubjectId = subject ? String(subject.id) : "";
+        const filter = document.getElementById("syllabusSubjectFilter");
+        const uploadSelect = document.getElementById("syllabusUploadSubject");
+        if (filter) filter.value = syllabusState.selectedSubjectId;
+        if (uploadSelect) uploadSelect.value = syllabusState.selectedSubjectId;
+        updateSyllabusUploadButton();
+        if (typeof validateSyllabusFile === "function") validateSyllabusFile(document.getElementById("syllabusUploadFile")?.files?.[0]);
+        return Boolean(subject) || !wanted;
+    }
+    function updateSyllabusProcessingNotice(record) {
+        if(!record)return;
+        const notice=document.getElementById("syllabusProcessingNotice"),title=document.getElementById("syllabusProcessingTitle"),badge=document.getElementById("syllabusProcessingBadge"),description=document.getElementById("syllabusProcessingDescription");
+        const status=String(record.status||record.processing_status||"pending").toLowerCase();
+        const labels={pending:"Pending",processing:"Processing",completed:"Completed",failed:"Failed"};
+        const filename=record.original_filename||record.filename||"Syllabus PDF",subject=record.subject||record.subject_name||"";
+        if(title)title.textContent=subject?`${filename} · ${subject}`:filename;
+        if(badge){badge.textContent=labels[status]||"Pending";badge.dataset.status=labels[status]?status:"pending";}
+        if(description){
+            description.textContent=status==="completed"?"Summarisation completed. The saved summary is ready in View Summary.":status==="failed"?(record.processing_error||"Summarisation failed. The uploaded PDF remains in the library."):status==="processing"?"Summarising the syllabus. This status updates automatically.":"Syllabus uploaded. Summarisation is pending and will update automatically.";
+        }
+        notice?.classList.remove("hidden");
+    }
+    async function loadSyllabusLibrary() {
+        const body = document.getElementById("syllabusTableBody");
+        const message = document.getElementById("syllabusMessage");
+        const requestId = ++syllabusState.listRequest;
+        let loadingResource = "subjects";
+        syllabusState.items = [];
+        if (message) message.textContent = "";
+        if (body) body.innerHTML = '<tr><td colspan="2" class="state-cell">Loading syllabi...</td></tr>';
+        const uploadDialog = document.getElementById("syllabusUploadDialog");
+        if (uploadDialog && !syllabusState.canUpload) uploadDialog.close();
+        try {
+            await loadSyllabusSubjects();
+            if (requestId !== syllabusState.listRequest) return;
+            syllabusState.permissionReady=true;
+            const selectedSubjectId = syllabusState.selectedSubjectId;
+            const selectedSubject = syllabusState.subjects.find(subject => String(subject.id) === String(selectedSubjectId));
+            if (selectedSubjectId && !selectedSubject) {
+                syllabusState.selectedSubjectId = "";
+                const filter = document.getElementById("syllabusSubjectFilter");
+                if (filter) filter.value = "";
+                if (body) body.innerHTML = '<tr><td colspan="2" class="state-cell">Select a valid subject.</td></tr>';
+                return;
+            }
+            if (!syllabusState.subjects.length) {
+                if (body) body.innerHTML = `<tr><td colspan="2" class="state-cell">${canonicalRole(currentUser?.role) === "admin" ? "No subjects available." : "No subjects are assigned to your account"}</td></tr>`;
+                return;
+            }
+            const visibleSubjects = selectedSubject ? [selectedSubject] : syllabusState.subjects;
+            loadingResource = "syllabi";
+            const lists = await Promise.all(visibleSubjects.map(async subject => {
+                const data = await api(`/api/smart-qpg/syllabi?subject_id=${encodeURIComponent(subject.id)}`, {cache:"no-store"});
+                const records = syllabusRecords(data);
+                return records.map(item => ({...item,subject:subject.name,subject_id:subject.id}));
+            }));
+            if (requestId !== syllabusState.listRequest) return;
+            syllabusState.items = lists.flat();
+            renderSyllabusRows();
+            if(syllabusState.recentUpload){
+                const latest=syllabusState.items.find(item=>String(item.syllabus_id??item.id)===String(syllabusState.recentUpload.id));
+                if(latest){syllabusState.recentUpload={...syllabusState.recentUpload,...latest};updateSyllabusProcessingNotice(syllabusState.recentUpload);}
+            }
+            clearTimeout(syllabusState.statusPoll);
+            if (syllabusState.items.some(item => ["pending","processing"].includes(String(item.status || item.processing_status || "").toLowerCase()))) {
+                syllabusState.statusPoll=setTimeout(()=>{if(document.getElementById("syllabus-library") && !document.getElementById("syllabus-library").classList.contains("hidden")) loadSyllabusLibrary();},2000);
+            }
+            if (message) message.textContent = "";
+        } catch (error) {
+            if (requestId !== syllabusState.listRequest) return;
+            console.error("[Syllabus Library] Subject or syllabus loading failed:", error);
+            syllabusState.subjectsLoading = false;
+            syllabusState.subjectsError = error;
+            syllabusState.permissionReady=true;
+            if (loadingResource === "subjects" && !syllabusState.subjectsLoaded) applySyllabusUploadPermission(canonicalRole(currentUser?.role) === "admin");
+            const message = apiFailureMessage(error, loadingResource);
+            if (loadingResource === "subjects") {
+                const placeholder = error?.status === 403 ? "You do not have permission to access these subjects."
+                    : error?.responseParseError || /unsupported subject list response|subject response contains/i.test(error?.message || "")
+                        ? "Could not read the subject data returned by the API."
+                        : error?.status === 0 || error instanceof TypeError || /cannot reach server|failed to fetch|networkerror/i.test(error?.message || "")
+                            ? "Could not connect to the API server." : "Subjects unavailable";
+                setSubjectOptions(document.getElementById("syllabusSubjectFilter"), syllabusState.subjects, placeholder, syllabusState.selectedSubjectId);
+                setSubjectOptions(document.getElementById("syllabusUploadSubject"), syllabusState.subjects, placeholder, syllabusState.selectedSubjectId);
+                updateSyllabusUploadButton();
+            }
+            if (body) body.innerHTML = `<tr><td colspan="2" class="state-cell">${escapeHtml(message)} <button class="btn btn-secondary small" type="button" id="syllabusRetry">Retry</button></td></tr>`;
+            const messageElement = document.getElementById("syllabusMessage");
+            if (messageElement) messageElement.textContent = message;
+            document.getElementById("syllabusRetry")?.addEventListener("click", loadSyllabusLibrary);
+        }
+    }
+    function renderSyllabusRows() {
+        const body = document.getElementById("syllabusTableBody"); if (!body) return;
+        const subject = document.getElementById("syllabusSubjectFilter")?.value || "";
+        const status = document.getElementById("syllabusStatusFilter")?.value || "";
+        const query = (document.getElementById("syllabusSearch")?.value || "").toLowerCase();
+        const items = syllabusState.items.filter(x => {
+            const processing=String(x.status||x.processing_status||"pending").toLowerCase();
+            return (!subject || text(x.subject_id) === subject) && (!status || processing===status) && `${x.filename || x.original_filename || ""} ${x.syllabus_name || x.name || ""} ${x.subject || x.subject_name || ""}`.toLowerCase().includes(query);
+        });
+        body.innerHTML = items.length ? items.map(item => {
+            const filename = item.original_filename || item.filename || "—";
+            const rawStatus = String(item.status || item.processing_status || "pending").toLowerCase();
+            const statusLabels = {pending:"Pending", processing:"Processing", completed:"Completed", failed:"Failed"};
+            const processing = statusLabels[rawStatus] || (rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1));
+            const statusClass = ["pending", "processing", "completed", "failed"].includes(rawStatus) ? rawStatus : "pending";
+            const hasSummary = Boolean(item.summary_data || item.summary || item.summary_text || item.topics?.length || item.units?.length);
+            const id = item.syllabus_id ?? item.id ?? "";
+            const summaryDisabled = rawStatus !== "completed" && !hasSummary;
+            const reprocessing = syllabusState.reprocessingIds.has(String(id));
+            const storedType = item.file_type || item.mime_type || item.content_type;
+            const fileType = storedType ? (String(storedType).includes("/") ? String(storedType).split("/").pop().toUpperCase() : String(storedType).toUpperCase()) : (filename.includes(".") ? filename.split(".").pop().toUpperCase() : "File");
+            const fileSize = item.size_bytes ?? item.file_size_bytes ?? item.file_size;
+            const sizeLabel = fileSize !== undefined && fileSize !== null && fileSize !== "" && Number.isFinite(Number(fileSize)) ? formatFileSize(Number(fileSize)) : "";
+            const actions = [
+                `<button type="button" class="btn btn-secondary small" data-syllabus-summary data-syllabus-id="${escapeHtml(id)}" ${summaryDisabled ? 'disabled title="Summary available when summarisation completes"' : ""}>View Summary</button>`,
+                `<button type="button" class="btn btn-secondary small" data-syllabus-download data-syllabus-id="${escapeHtml(id)}" data-filename="${escapeHtml(filename)}">Download PDF</button>`,
+                syllabusState.canUpload && (rawStatus === "failed" || reprocessing) ? `<button type="button" class="btn btn-secondary small" data-syllabus-reprocess data-syllabus-id="${escapeHtml(id)}" ${reprocessing ? "disabled" : ""}>${reprocessing ? "Processing…" : "Reprocess"}</button>` : "",
+                syllabusState.canUpload ? `<button type="button" class="btn btn-danger small" data-syllabus-delete data-syllabus-id="${escapeHtml(id)}">Delete</button>` : ""
+            ].filter(Boolean).join("");
+            return `<tr class="syllabus-record-row" data-syllabus-record-id="${escapeHtml(id)}"><td><span class="syllabus-filename">${escapeHtml(filename)}</span><small class="syllabus-file-meta">${escapeHtml(fileType)}${sizeLabel ? ` · ${escapeHtml(sizeLabel)}` : ""}</small></td><td><span class="status ${statusClass}">${escapeHtml(processing)}</span></td></tr><tr class="syllabus-actions-row" data-syllabus-actions-for="${escapeHtml(id)}"><td colspan="2"><div class="syllabus-row-actions">${actions}</div></td></tr>`;
+        }).join("") : '<tr><td colspan="2" class="state-cell">No syllabi uploaded for this subject yet.</td></tr>';
+    }
+    let aiSyllabusRequest = 0;
+    let aiSyllabusTopicRequest = 0;
+    function resolveAiSubject(value) {
+        const wanted = String(value ?? "").trim();
+        if (!wanted) return null;
+        return aiState.subjects.find(subject => String(subject.id).trim() === wanted)
+            || aiState.subjects.find(subject => String(subject.name).trim().toLocaleLowerCase() === wanted.toLocaleLowerCase())
+            || null;
+    }
+    function setAiSubject(value) {
+        const select = document.getElementById("aiSubject");
+        const subject = resolveAiSubject(value);
+        if (select) select.value = subject ? String(subject.id) : "";
+        aiState.selectedSubjectId = subject ? String(subject.id) : "";
+        aiState.selectedSubjectName = subject ? String(subject.name) : "";
+        return subject;
+    }
+    function aiSubjectIssue(value) {
+        const requested = String(value ?? "").trim();
+        if (!requested) return "Choose a subject to continue.";
+        if (!aiState.subjects.length) return "No subjects are assigned to this account.";
+        if (/^[{(]?[0-9a-f]{8}-[0-9a-f-]{27,}[})]?$/i.test(requested)) return "The saved configuration references a subject ID that is not assigned to this account.";
+        return `Subject ${requested} is unavailable to this account.`;
+    }
+    function aiSyllabusRecordId(record) { return record?.syllabus_id ?? record?.id ?? record?.record_id ?? ""; }
+    function aiSyllabusStatus(record) { return String(record?.status ?? record?.processing_status ?? "").trim().toLowerCase(); }
+    function aiSyllabusFilename(record) { return String(record?.original_filename ?? record?.original_file_name ?? record?.filename ?? record?.uploaded_filename ?? record?.file_name ?? record?.stored_filename ?? "Filename unavailable").trim(); }
+    function aiSyllabusDetailRecord(response) { return response?.syllabus ?? response?.item ?? response?.record ?? response; }
+    function aiSyllabusHasStructuredSummary(response) {
+        const record = aiSyllabusDetailRecord(response);
+        const summary = record?.summary_data && typeof record.summary_data === "object" ? record.summary_data : record?.summary && typeof record.summary === "object" ? record.summary : null;
+        if (!summary) return false;
+        const modules = summary.modules ?? summary.syllabus_modules ?? summary.course_modules ?? record.modules ?? record.units ?? summary.units;
+        const moduleRecords = Array.isArray(modules) ? modules : modules && typeof modules === "object" ? Object.values(modules) : [];
+        return moduleRecords.some(module => {
+            if (!module || typeof module !== "object") return false;
+            const sections = module.sections ?? module.headings ?? module.units ?? module.contents ?? module.module_sections;
+            const sectionRecords = Array.isArray(sections) ? sections : sections && typeof sections === "object" ? Object.values(sections) : [];
+            return sectionRecords.some(section => {
+                if (Array.isArray(section)) return section.length > 0;
+                if (!section || typeof section !== "object") return false;
+                const topics = section.topics ?? section.topic_list ?? section.subtopics ?? section.items ?? section.content;
+                return Array.isArray(topics) ? topics.length > 0 : Boolean(topics && typeof topics === "object" && Object.keys(topics).length);
+            }) || Array.isArray(module.topics) && module.topics.length > 0;
+        });
+    }
+    function setAiSyllabusOptions(records, placeholder) {
+        const select = document.getElementById("aiSyllabus");
+        if (!select) return;
+        select.innerHTML = "";
+        const first = document.createElement("option");
+        first.value = "";
+        first.textContent = placeholder;
+        select.append(first);
+        records.forEach(record => {
+            const id = aiSyllabusRecordId(record);
+            if (id == null || String(id).trim() === "") return;
+            const status = aiSyllabusStatus(record);
+            const detail = aiState.syllabusDetails[String(id)];
+            const validSummary = Boolean(detail?.valid);
+            const eligible = status === "completed" && validSummary;
+            const option = document.createElement("option");
+            option.value = String(id);
+            const summaryStatus = status !== "completed" ? "" : !detail ? " · Summary could not be verified" : !validSummary ? " · Structured summary unavailable" : "";
+            option.textContent = `${aiSyllabusFilename(record)} · ${status ? status[0].toUpperCase() + status.slice(1) : "Status unavailable"}${summaryStatus}`;
+            option.disabled = !eligible;
+            option.dataset.filename = aiSyllabusFilename(record);
+            select.append(option);
+        });
+        select.value = "";
+        aiState.selectedSyllabusId = "";
+    }
+    async function loadAiSyllabuses(subjectId, preferredSyllabusId) {
+        const holder = document.getElementById("aiSyllabus"), topics = document.getElementById("aiTopicsContainer");
+        const request = ++aiSyllabusRequest;
+        aiSyllabusTopicRequest += 1;
+        aiState.modules = [];
+        aiState.guidance = {};
+        aiState.syllabusDetails = {};
+        aiState.syllabi = [];
+        aiState.selectedSyllabusId = "";
+        const selectedSubject = setAiSubject(subjectId);
+        aiState.syllabusSubjectId = selectedSubject ? String(selectedSubject.id) : "";
+        setAiSyllabusOptions([], selectedSubject ? "Loading syllabus PDFs…" : "Select a subject first");
+        if (topics) topics.textContent = "Select a syllabus to load topics.";
+        updateAiSummary();
+        if (!selectedSubject) {
+            setAiSyllabusOptions([], "Select a subject first");
+            updateAiSummary();
+            return;
+        }
+        try {
+            const result = await api(`/api/smart-qpg/syllabi?subject_id=${encodeURIComponent(selectedSubject.id)}`, {cache:"no-store"});
+            if (request !== aiSyllabusRequest) return;
+            const list = syllabusRecords(result).filter(s => String(s.subject_id ?? s.subjectId ?? "") === String(selectedSubject.id));
+            aiState.syllabi = list;
+            if (!list.length) {
+                setAiSyllabusOptions([], "No syllabus PDFs uploaded for this subject yet. Upload one from the Syllabus Library.");
+                updateAiSummary();
+                return;
+            }
+            const candidates = list.filter(record => aiSyllabusStatus(record) === "completed" && aiSyllabusRecordId(record) !== "");
+            const checks = await Promise.allSettled(candidates.map(async record => {
+                const id = String(aiSyllabusRecordId(record));
+                const detail = aiSyllabusHasStructuredSummary(record)
+                    ? aiSyllabusDetailRecord(record)
+                    : aiSyllabusDetailRecord(await api(`/api/smart-qpg/syllabi/${encodeURIComponent(id)}`, {cache:"no-store"}));
+                if (request !== aiSyllabusRequest) return;
+                aiState.syllabusDetails[id] = {record:detail, valid:aiSyllabusHasStructuredSummary(detail)};
+            }));
+            if (request !== aiSyllabusRequest) return;
+            const failedVerification = checks.some(result => result.status === "rejected");
+            setAiSyllabusOptions(list, list.length ? "Select a completed syllabus PDF" : "No syllabus PDFs uploaded for this subject yet. Upload one from the Syllabus Library.");
+            if (failedVerification) document.getElementById("aiMessage").textContent = "Some syllabus summaries could not be verified. Only completed PDFs with valid structured summaries can be selected.";
+            if (preferredSyllabusId && aiState.syllabusDetails[String(preferredSyllabusId)]?.valid) {
+                holder.value = String(preferredSyllabusId);
+                aiState.selectedSyllabusId = String(preferredSyllabusId);
+                await loadAiSyllabusTopics(holder.value);
+            }
+        } catch(error) {
+            if (request !== aiSyllabusRequest) return;
+            setAiSyllabusOptions([], "Syllabus PDFs unavailable");
+            document.getElementById("aiMessage").textContent = apiFailureMessage(error, "syllabi");
+        }
+        updateAiSummary();
+    }
+    async function loadAiSyllabusTopics(syllabusId) {
+        const topics = document.getElementById("aiTopicsContainer");
+        const request = ++aiSyllabusTopicRequest;
+        aiState.modules = [];
+        aiState.guidance = {};
+        aiState.selectedSyllabusId = "";
+        if (!syllabusId) {
+            if (topics) topics.textContent = "Select a syllabus PDF to load modules and topics.";
+            updateAiSummary();
+            return;
+        }
+        if (topics) topics.textContent = "Loading topics…";
+        try {
+            const listedRecord = aiState.syllabi.find(record => String(aiSyllabusRecordId(record)) === String(syllabusId));
+            const data = aiState.syllabusDetails[String(syllabusId)]?.record;
+            if (!listedRecord || String(listedRecord.subject_id ?? listedRecord.subjectId ?? "") !== aiState.selectedSubjectId
+                || aiSyllabusStatus(listedRecord) !== "completed" || !aiState.syllabusDetails[String(syllabusId)]?.valid || !data) {
+                throw new Error("Choose a completed syllabus PDF with a valid structured summary.");
+            }
+            aiState.selectedSyllabusId = String(syllabusId);
+            if (request !== aiSyllabusTopicRequest) return;
+            if (!aiSyllabusHasStructuredSummary(data)) throw new Error("This syllabus does not have a valid structured summary.");
+            const summary = data.summary_data && typeof data.summary_data === "object" ? data.summary_data : (data.summary && typeof data.summary === "object" ? data.summary : {});
+            const subjectInfo = summary.subject_information || summary.subject_info || summary.subject_details || {};
+            const moduleSource = summary.modules || summary.syllabus_modules || summary.course_modules || data.modules || data.units || summary.units;
+            const asRecords = value => Array.isArray(value) ? value : value && typeof value === "object" ? Object.entries(value).map(([name, record]) => record && typeof record === "object" ? {module_name:name, ...record} : {module_name:name, topics:record}) : [];
+            const readName = (item, keys) => {
+                if (typeof item === "string" || typeof item === "number") return String(item).trim();
+                if (!item || typeof item !== "object") return "";
+                for (const key of keys) if (item[key] != null && String(item[key]).trim()) return String(item[key]).trim();
+                return "";
+            };
+            const topicKeys = ["topics", "topic_list", "subtopics", "items", "content"];
+            const sectionKeys = ["sections", "headings", "units", "contents", "syllabus_sections", "module_sections"];
+            const modules = asRecords(moduleSource).map((module, moduleIndex) => {
+                if (!module || typeof module !== "object") return null;
+                const rawName = readName(module, ["module_name", "name", "title", "module_title", "module", "heading"]);
+                const number = readName(module, ["module_number", "module_no", "number", "module_index"]);
+                let name = rawName || `Module ${moduleIndex + 1}`;
+                if (!/^module\b/i.test(name)) name = `${number ? (/^module\b/i.test(number) ? number : `Module ${number}`) : `Module ${moduleIndex + 1}`} – ${name}`;
+                const sectionSource = sectionKeys.map(key => module[key]).find(value => value != null);
+                let sections = Array.isArray(sectionSource) ? sectionSource
+                    : sectionSource && typeof sectionSource === "object" ? Object.entries(sectionSource).map(([heading, section]) => section && typeof section === "object" ? {heading, ...section} : {heading, topics:section})
+                    : [];
+                if (!sections.length && module.topics != null) sections = [{heading:"Topics", topics:module.topics}];
+                sections = sections.map((section, sectionIndex) => {
+                    if (typeof section === "string") return {name:section.trim(), topics:[], sectionIndex};
+                    if (!section || typeof section !== "object") return null;
+                    const sectionName = readName(section, ["heading", "section_heading", "section_name", "section_title", "name", "title", "heading_name"]) || `Section ${sectionIndex + 1}`;
+                    let values = topicKeys.map(key => section[key]).find(value => value != null);
+                    if (values == null) values = section;
+                    const topicRecords = (Array.isArray(values) ? values : values && typeof values === "object" ? Object.values(values) : values == null ? [] : [values]);
+                    const normalizedTopics = topicRecords.map(topic => {
+                        const topicName = readName(topic, ["topic_name", "topic_title", "name", "title", "text", "topic"]);
+                        return topicName ? {name:topicName} : null;
+                    }).filter(Boolean);
+                    return {name:sectionName, topics:normalizedTopics, sectionIndex};
+                }).filter(Boolean);
+                return {name, hours:readName(module,["allocated_hours", "hours_allocated", "hours", "module_hours", "duration_hours", "teaching_hours", "contact_hours"]), sections, moduleIndex};
+            }).filter(Boolean).filter(module => module.sections.some(section => section.topics.length));
+            const looseTopics = data.topics || summary.topics;
+            if (!modules.length && Array.isArray(looseTopics) && looseTopics.length) {
+                modules.push({name:readName(subjectInfo,["subject_name","name","course_name","title"]) || "Syllabus Topics", hours:"", sections:[{name:"Topics",topics:looseTopics.map(topic=>({name:readName(topic,["topic_name","topic_title","name","title","text","topic"])})).filter(topic=>topic.name),sectionIndex:0}],moduleIndex:0});
+            }
+            const rawGuidance = summary.question_generation_guidance || summary.question_generation_guidelines || data.question_generation_guidance;
+            const guidance = {};
+            const guidanceTopicName = item => readName(item,["topic_name","topic_title","topic","name","title"]);
+            const indexGuidance = (node, inheritedName="") => {
+                if (Array.isArray(node)) { node.forEach(item=>indexGuidance(item,inheritedName)); return; }
+                if (!node || typeof node !== "object") return;
+                const name = guidanceTopicName(node) || inheritedName;
+                if (name && ["description","short_description","explanation","topic_categories","categories","category","suitable_question_formats","question_formats","suggested_marks","difficulty_levels","difficulty","coverage_suggestions","importance_rationale"].some(key=>node[key] != null)) {
+                    (guidance[name.toLocaleLowerCase()] ||= []).push(node);
+                }
+                for (const [key,value] of Object.entries(node)) {
+                    if (!value || typeof value !== "object") continue;
+                    if (/^topics?$|topic_guidance/i.test(key) && !Array.isArray(value)) {
+                        Object.entries(value).forEach(([topicName,topicGuidance])=>indexGuidance(topicGuidance,topicName));
+                    } else {
+                        indexGuidance(value, /sections?|headings?|modules?|module_guidance|guidance_by_module|items/i.test(key) ? "" : name);
+                    }
+                }
+            };
+            indexGuidance(rawGuidance);
+            aiState.modules = modules.map(module => ({...module, sections:module.sections.map(section => ({...section, topics:section.topics.map((topic, topicIndex) => ({...topic, topicIndex, guidance:guidance[topic.name.toLocaleLowerCase()] || []}))}))}));
+            aiState.guidance = guidance;
+            renderAiTopicModules();
+        } catch(error) { if (request === aiSyllabusTopicRequest && topics) topics.textContent = apiFailureMessage(error, "syllabus topics"); }
+        updateAiSummary();
+    }
+    async function loadAiGeneration() {
+        const subjectSelect = document.getElementById("aiSubject");
+        const configStatus = document.getElementById("aiConfigStatus");
+        try {
+            const user = currentUser || await api("/auth/me");
+            if (!currentUser) currentUser = user;
+            const admin = canonicalRole(user.role) === "admin";
+            // Fetch fresh, role-scoped subjects before applying configuration values.
+            const subjectsResponse = admin
+                ? await api("/subjects", {cache:"no-store"})
+                : await api("/teachers/me/subjects", {cache:"no-store"});
+            if (!admin) currentUserAssignments = subjectsResponse;
+            aiState.subjects = normalizeSyllabusSubjects(subjectsResponse);
+            aiState.syllabi = [];
+            aiState.syllabusDetails = {};
+            aiState.syllabusSubjectId = "";
+            aiState.selectedSyllabusId = "";
+            aiState.modules = [];
+            aiState.guidance = {};
+            setOptions(subjectSelect, aiState.subjects, aiState.subjects.length ? "Select subject" : "No subjects are assigned to this account");
+            setAiSubject("");
+            setAiSyllabusOptions([], "Select a subject first");
+            const topics = document.getElementById("aiTopicsContainer");
+            if (topics) topics.textContent = "Select a syllabus to load topics.";
+            document.getElementById("aiMessage").textContent = aiState.subjects.length ? "" : "No subjects are assigned to this account.";
+        } catch (error) {
+            aiState.subjects = [];
+            aiState.syllabi = [];
+            aiState.syllabusDetails = {};
+            aiState.syllabusSubjectId = "";
+            aiState.selectedSyllabusId = "";
+            aiState.modules = [];
+            aiState.guidance = {};
+            setOptions(subjectSelect, [], "Could not load subjects");
+            document.getElementById("aiMessage").textContent = apiFailureMessage(error, "assigned subjects");
+            if (configStatus) { configStatus.textContent = "Could not load permitted subjects; saved configuration was not applied."; configStatus.style.color = "#dc2626"; }
+            updateAiSummary();
+            return;
+        }
+        // Enforce the required sequence: subject options exist before a saved
+        // subject name/ID is resolved and used to request syllabuses.
+        if (document.getElementById("aiConfigSelect")) await loadSavedConfigs();
+        const selected = setAiSubject(aiState.selectedSubjectId || subjectSelect?.value || "");
+        if (selected && aiState.syllabusSubjectId !== String(selected.id)) await loadAiSyllabuses(selected.id);
+        else if (aiState.subjects.length && !subjectSelect?.value) {
+            setAiSyllabusOptions([], "Select a subject first");
+        }
+        if (document.getElementById("aiBlueprintSelect")) await loadBlueprints();
+        if (!document.querySelector("#aiSectionsContainer [data-ai-section]")) addAiSection();
+        updateAiSummary();
+    }
+    function addAiSection(section = {}) {
+        const host = document.getElementById("aiSectionsContainer"); if (!host) return;
+        const n = host.querySelectorAll("[data-ai-section]").length + 1;
+        const node = document.createElement("div"); node.className = "content-card ai-section"; node.dataset.aiSection = "";
+        node.innerHTML = `<div class="card-header"><h3>Section ${n}</h3><button type="button" class="btn btn-secondary small" data-remove-ai-section>Remove Section</button></div><div class="form-grid"><div class="form-group"><label>Section Name</label><input data-field="name" value="${escapeHtml(section.name || String.fromCharCode(64 + n))}" required></div><div class="form-group"><label>Number of Questions</label><input data-field="count" type="number" min="1" value="${section.count ?? 5}" required></div><div class="form-group"><label>Marks Per Question</label><input data-field="marks" type="number" min="1" value="${section.marks ?? 2}" required></div><div class="form-group"><label>Question Type</label><select data-field="type"><option>Short-answer</option><option>Descriptive</option><option>Long-answer</option><option>Multiple-choice</option></select></div><div class="form-group"><label>Difficulty</label><select data-field="difficulty"><option>Mixed</option><option>Easy</option><option>Medium</option><option>Hard</option></select></div><div class="form-group form-group-full"><label>Instructions</label><textarea data-field="instructions">${escapeHtml(section.instructions || "")}</textarea></div><div class="form-group form-group-full"><strong data-section-total></strong></div></div>`;
+        host.append(node); node.querySelector("[data-field=type]").value = section.type || "Short-answer"; node.querySelector("[data-field=difficulty]").value = section.difficulty || "Mixed";
+        updateAiSummary();
+    }
+    function aiRenderSections(sections) { const host = document.getElementById("aiSectionsContainer"); if (!host) return; host.innerHTML = ""; (sections || []).forEach(addAiSection); updateAiSummary(); }
+    function renderAiTopicModules() {
+        const host = document.getElementById("aiTopicsContainer");
+        if (!host) return;
+        if (!aiState.modules.length) {
+            host.innerHTML = '<p class="ai-topics-empty">No structured topics are available for this syllabus.</p>';
+            updateAiTopicSelectionSummary();
+            return;
+        }
+        const renderGuidance = guidance => {
+            if (!guidance.length) return "";
+            const fields = [
+                ["Description", ["description", "short_description", "explanation"]],
+                ["Topic categories", ["topic_categories", "categories", "category"]],
+                ["Suitable question formats", ["suitable_question_formats", "recommended_question_formats", "question_formats", "formats", "question_types"]],
+                ["Suggested marks (AI-generated suggestions)", ["suggested_marks", "suggested_mark_ranges", "recommended_marks", "marks", "mark_ranges"]],
+                ["Difficulty", ["difficulty_levels", "difficulty"]],
+                ["Importance (AI-generated suggestion)", ["importance_rationale", "importance_reason", "importance", "rationale"]],
+                ["Coverage suggestions", ["coverage_suggestions", "coverage", "suggestions"]]
+            ];
+            const textValue = value => {
+                if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join(", ");
+                if (value && typeof value === "object") return Object.entries(value).map(([key,item]) => `${key}: ${textValue(item)}`).filter(Boolean).join(" · ");
+                return value == null || String(value).trim() === "" ? "" : String(value).trim();
+            };
+            const rows = fields.map(([label,keys]) => {
+                const value = keys.map(key => guidance.find(item => item[key] != null)?.[key]).find(item => item != null);
+                const content = textValue(value);
+                return content ? `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(content)}</p>` : "";
+            }).filter(Boolean).join("");
+            if (!rows) return "";
+            return `<details class="ai-topic-guidance"><summary>Topic details</summary><div class="ai-topic-guidance-body">${rows}</div></details>`;
+        };
+        host.innerHTML = aiState.modules.map(module => {
+            const topicCount = module.sections.reduce((count,section)=>count+section.topics.length,0);
+            const topicKeys = module.sections.flatMap(section=>section.topics.map(topic=>`${module.moduleIndex}:${section.sectionIndex}:${topic.topicIndex}`));
+            const sectionMarkup = module.sections.map(section => {
+                if (!section.topics.length) return "";
+                const topicRows = section.topics.map(topic => {
+                    const key = topic.name.toLocaleLowerCase();
+                    const guide = renderGuidance(topic.guidance || []);
+                    return `<div class="ai-topic-row"><label><input type="checkbox" data-topic-checkbox data-module-index="${module.moduleIndex}" data-section-index="${section.sectionIndex}" data-topic-index="${topic.topicIndex}" data-topic-key="${escapeHtml(module.moduleIndex+':'+section.sectionIndex+':'+topic.topicIndex)}" data-topic-name="${escapeHtml(topic.name)}" checked><span>${escapeHtml(topic.name)}</span></label>${guide}</div>`;
+                }).join("");
+                return `<section class="ai-topic-section"><h5>${escapeHtml(section.name)}</h5><div class="ai-topic-list">${topicRows}</div></section>`;
+            }).join("");
+            const hours = module.hours ? `${escapeHtml(module.hours)}${/hour/i.test(module.hours) ? "" : " Hours"}` : "Hours not specified";
+            return `<article class="ai-module-card" data-module-card="${module.moduleIndex}"><div class="ai-module-header"><label class="ai-module-select"><input type="checkbox" data-module-checkbox data-module-index="${module.moduleIndex}" data-topic-keys="${escapeHtml(JSON.stringify(topicKeys))}" checked><span class="ai-module-title">${escapeHtml(module.name)}</span></label><button type="button" class="btn btn-secondary small ai-module-toggle" data-module-toggle="${module.moduleIndex}" aria-expanded="false">Expand</button></div><p class="ai-module-meta">${hours} · ${module.sections.length} Sections · ${topicCount} Topics</p><div class="ai-module-content" data-module-content="${module.moduleIndex}" hidden>${sectionMarkup}<div class="ai-module-controls"><button type="button" class="btn btn-secondary small" data-module-select-all="${module.moduleIndex}">Select all topics</button><button type="button" class="btn btn-secondary small" data-module-clear="${module.moduleIndex}">Clear module selection</button></div></div></article>`;
+        }).join("");
+        updateAiTopicSelectionSummary();
+    }
+    function updateAiTopicSelectionSummary() {
+        const checkboxes = [...document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]")];
+        const selectedNames = new Set(checkboxes.filter(input=>input.checked).map(input=>input.dataset.topicKey));
+        document.querySelectorAll("#aiTopicsContainer [data-module-checkbox]").forEach(input => {
+            let keys = [];
+            try { keys = JSON.parse(input.dataset.topicKeys || "[]"); } catch (_) {}
+            const count = keys.filter(key=>selectedNames.has(key)).length;
+            input.checked = keys.length > 0 && count === keys.length;
+            input.indeterminate = count > 0 && count < keys.length;
+        });
+        const activeModules = aiState.modules.filter(module => module.sections.some(section=>section.topics.some(topic=>checkboxes.some(input=>Number(input.dataset.moduleIndex)===module.moduleIndex && Number(input.dataset.sectionIndex)===section.sectionIndex && Number(input.dataset.topicIndex)===topic.topicIndex && input.checked))));
+        const hours = activeModules.reduce((sum,module)=>sum+(Number.parseFloat(module.hours)||0),0);
+        const summary = document.getElementById("aiTopicsCount");
+        if (summary) summary.textContent = `Selected modules: ${activeModules.map(module=>module.name).join(", ") || "none"} · ${selectedNames.size} of ${new Set(checkboxes.map(input=>input.dataset.topicKey)).size} topics${activeModules.some(module=>module.hours) ? ` · ${hours} selected module hours` : ""}`;
+    }
+    document.getElementById("aiTopicsContainer")?.addEventListener("change", event => {
+        const moduleInput = event.target.closest("[data-module-checkbox]");
+        if (moduleInput) {
+            let keys = [];
+            try { keys = JSON.parse(moduleInput.dataset.topicKeys || "[]"); } catch (_) {}
+            document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]").forEach(input=>{if(keys.includes(input.dataset.topicKey))input.checked=moduleInput.checked;});
+        }
+        updateAiTopicSelectionSummary();
+        updateAiSummary();
+    });
+    document.getElementById("aiTopicsContainer")?.addEventListener("click", event => {
+        const toggle = event.target.closest("[data-module-toggle]");
+        const selectAll = event.target.closest("[data-module-select-all]");
+        const clear = event.target.closest("[data-module-clear]");
+        if (toggle) {
+            const content = document.querySelector(`[data-module-content="${toggle.dataset.moduleToggle}"]`);
+            if (content) content.hidden = !content.hidden;
+            toggle.setAttribute("aria-expanded", String(content ? !content.hidden : false));
+            toggle.textContent = content && !content.hidden ? "Collapse" : "Expand";
+        } else if (selectAll || clear) {
+            const index = (selectAll || clear).dataset.moduleSelectAll || (selectAll || clear).dataset.moduleClear;
+            const moduleInput = document.querySelector(`#aiTopicsContainer [data-module-checkbox][data-module-index="${index}"]`);
+            let keys = [];
+            try { keys = JSON.parse(moduleInput?.dataset.topicKeys || "[]"); } catch (_) {}
+            document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]").forEach(input=>{if(keys.includes(input.dataset.topicKey))input.checked=Boolean(selectAll);});
+            updateAiTopicSelectionSummary();
+            updateAiSummary();
+        }
+    });
+    document.getElementById("aiSelectAllTopics")?.addEventListener("click",()=>{document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]").forEach(input=>input.checked=true);updateAiTopicSelectionSummary();updateAiSummary();});
+    document.getElementById("aiSelectNoneTopics")?.addEventListener("click",()=>{document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]").forEach(input=>input.checked=false);updateAiTopicSelectionSummary();updateAiSummary();});
+    function selectedAiTopics() { return [...document.querySelectorAll("#aiTopicsContainer [data-topic-checkbox]:checked")].map(input => input.dataset.topicName); }
+    function selectedAiModules() {
+        return aiState.modules.map(module => ({name:module.name, hours:module.hours || null,
+            sections:module.sections.map(section => ({name:section.name, topics:section.topics.filter(topic => {
+                const selector = `#aiTopicsContainer [data-topic-checkbox][data-module-index="${module.moduleIndex}"][data-section-index="${section.sectionIndex}"][data-topic-index="${topic.topicIndex}"]`;
+                return Boolean(document.querySelector(selector)?.checked);
+            }).map(topic => ({name:topic.name, guidance:topic.guidance || []}))})).filter(section=>section.topics.length)
+        })).filter(module=>module.sections.length);
+    }
+    function aiSections() { return [...document.querySelectorAll("#aiSectionsContainer [data-ai-section]")].map(node => Object.fromEntries([...node.querySelectorAll("[data-field]")].map(el => [el.dataset.field, el.type === "number" ? Number(el.value) : el.value]))); }
+    function updateAiSummary() {
+        const sections = aiSections(), total = sections.reduce((n,s) => n + (s.count || 0), 0), marks = sections.reduce((n,s) => n + (s.count || 0) * (s.marks || 0), 0);
+        const subject = document.getElementById("aiSubject")?.selectedOptions[0]?.textContent || "—", syllabus = document.getElementById("aiSyllabus")?.selectedOptions[0]?.textContent || "—";
+        const topics = selectedAiTopics();
+        const examinationName = document.getElementById("aiExamName")?.value.trim() || document.getElementById("aiPaperTitle")?.value.trim() || "Question Paper";
+        const details = document.getElementById("aiSummaryDetails"); if (details) details.textContent = `${examinationName} · ${subject} · ${syllabus} · Topics: ${topics.join(", ") || "none selected"} · ${sections.length} sections · ${total} questions · ${marks}/${document.getElementById("aiTotalMarks")?.value || 0} marks · ${document.getElementById("aiDuration")?.value || "—"}`;
+        const stats = document.getElementById("aiSummaryStats"); if (stats) stats.innerHTML = `<div class="stat-card"><div>Sections</div><strong>${sections.length}</strong></div><div class="stat-card"><div>Questions</div><strong>${total}</strong></div><div class="stat-card"><div>Total marks</div><strong>${marks}</strong></div>`;
+        sections.forEach((section, index) => { const totalNode = document.querySelectorAll("#aiSectionsContainer [data-section-total]")[index]; if (totalNode) totalNode.textContent = `Section total: ${(section.count || 0) * (section.marks || 0)} marks`; });
+        const valid = validateAiSections(false);
+        const message = document.getElementById("aiSectionTotalMessage"); if (message) { message.textContent = `Sections total: ${marks} / ${Number(document.getElementById("aiTotalMarks")?.value) || 0}`; message.style.color = valid ? "#16a34a" : "#dc2626"; }
+        const title = document.getElementById("aiSummaryTitle"); if (title) title.textContent = document.getElementById("aiPaperTitle")?.value.trim() || "Question Paper";
+        const button = document.getElementById("aiGenerateButton");
+        const syllabusId = document.getElementById("aiSyllabus")?.value || "";
+        const selectedSyllabusRecord = aiState.syllabi.find(record=>String(aiSyllabusRecordId(record))===String(syllabusId));
+        const canGenerate = Boolean(aiState.selectedSubjectId && syllabusId && selectedSyllabusRecord && aiSyllabusStatus(selectedSyllabusRecord)==="completed" && aiState.syllabusDetails[String(syllabusId)]?.valid && selectedAiTopics().length && validateAiSections(false));
+        if (button) button.disabled = !canGenerate || aiState.submitting;
+        updateAiTopicSelectionSummary();
+    }
+    function validateAiSections(showMessage = true) {
+        const sections = aiSections(), target = Number(document.getElementById("aiTotalMarks")?.value);
+        const total = sections.reduce((sum, section) => sum + (Number(section.count) || 0) * (Number(section.marks) || 0), 0);
+        const valid = sections.length > 0 && Number.isFinite(target) && target > 0 && total === target && sections.every(section => section.name.trim() && Number.isInteger(section.count) && section.count > 0 && Number.isInteger(section.marks) && section.marks > 0);
+        if (showMessage) { const message = document.getElementById("aiSectionTotalMessage"); if (message) { message.textContent = `Sections total: ${total} / ${Number.isFinite(target) ? target : 0}`; message.style.color = valid ? "#16a34a" : "#dc2626"; } }
+        return valid;
+    }
+    function escapeHtml(value) { return text(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
     /* PAGE VISIBILITY */
 
     function showLoginPage() {
@@ -620,9 +1295,18 @@ document.addEventListener("DOMContentLoaded", function () {
        Current user and role are owned by /auth/me. */
 
     let currentUser = null;
+    let userRole = "";
+
+    function canonicalRole(role) {
+        return String(role || "").trim().toLowerCase() === "admin" ? "admin" : "teacher";
+    }
+
+    function roleLabel(role) {
+        return canonicalRole(role) === "admin" ? "Admin" : "Teacher";
+    }
 
     function isAdminUser() {
-        return Boolean(currentUser && String(currentUser.role).toLowerCase() === "admin");
+        return Boolean(currentUser && canonicalRole(currentUser.role) === "admin");
     }
 
     let currentUserAssignments = null;
@@ -669,6 +1353,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function loadCurrentUserAssignments() {
         if (!currentUser) return;
+        if (currentUserAssignments) return true;
         try {
             const data = await api("/teachers/me/subjects");
             currentUserAssignments = data;
@@ -698,6 +1383,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!getToken()) return false;
         try {
             currentUser = await apiRequest("/auth/me");
+            userRole = String(currentUser?.role || "").trim().toLowerCase();
             updateUserUI();
             applyRoleUI();
             if (!isAdminUser()) {
@@ -707,6 +1393,7 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             if (error.status === 401) clearSession();
             currentUser = null;
+            userRole = "";
             currentUserAssignments = null;
             currentUserPermissions = {};
             if (error.status !== 401) throw error;
@@ -726,7 +1413,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (subjectForm) subjectForm.classList.toggle("hidden", !isAdmin);
         document.querySelectorAll('#teacherNavigation [data-page="teacher-subjects"]').forEach(element => element.classList.toggle("hidden", !isAdmin));
 
-        const role = currentUser ? currentUser.role : "—";
+        const role = currentUser ? roleLabel(currentUser.role) : "—";
 
         ["profileRole", "adminProfileRole"].forEach(function (id) {
             const element = document.getElementById(id);
@@ -741,7 +1428,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const fields = {
             sidebarUserName: name,
-            sidebarUserRole: currentUser?.role || "",
+            sidebarUserRole: currentUser ? roleLabel(currentUser.role) : "",
             topbarUserName: name,
             teacherWelcomeName: name,
             adminWelcomeName: name,
@@ -825,6 +1512,14 @@ document.addEventListener("DOMContentLoaded", function () {
         "admin-profile": {
             title: "Profile",
             subtitle: "Manage administrator profile"
+        },
+        "syllabus-library": {
+            title: "Syllabus Library",
+            subtitle: "View and manage subject-wise syllabi"
+        },
+        "ai-generation": {
+            title: "Generate Questions with AI",
+            subtitle: "Create AI-generated questions from a syllabus, organized by section"
         }
     };
 
@@ -905,7 +1600,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }));
             return Promise.all(jobs);
-        }
+        },
+        "syllabus-library": loadSyllabusLibrary,
+        "ai-generation": loadAiGeneration
     };
 
     const routeByPage = {
@@ -915,7 +1612,9 @@ document.addEventListener("DOMContentLoaded", function () {
         "teacher-generate": "/generate-paper", "teacher-papers": "/my-papers",
         "admin-papers": "/my-papers", "admin-teachers": "/teachers",
         "teacher-profile": "/profile", "admin-profile": "/profile",
-        "admin-activity": "/activity"
+        "admin-activity": "/activity",
+        "syllabus-library": "/syllabus",
+        "ai-generation": "/ai-generate"
     };
     const pageLoaded = new Set();
     let activePageId = null;
@@ -2773,6 +3472,14 @@ document.addEventListener("DOMContentLoaded", function () {
         return '<span class="status ' + entry[0] + '">' + escapeHTML(entry[1]) + '</span>';
     }
 
+    function parseTeacherListResponse(response) {
+        const records = response?.teachers;
+        if (!Array.isArray(records)) throw new Error("The server returned an unsupported teacher list format.");
+        const totalValue = response.total ?? records.length;
+        const parsedTotal = Number(totalValue);
+        return { records, total: Number.isFinite(parsedTotal) && parsedTotal >= 0 ? parsedTotal : records.length };
+    }
+
     async function loadTeachers() {
         const tbody = document.getElementById("teachersTableBody");
 
@@ -2787,26 +3494,43 @@ document.addEventListener("DOMContentLoaded", function () {
         params.set("page_size", String(teachersPageSize));
 
         teachersCache = [];
-        tbody.innerHTML = tableStateHTML("⟳", "Loading teachers…", "loading", 5);
+        tbody.innerHTML = tableStateHTML("⟳", "Loading teacher records...", "loading", 5);
 
         let data;
 
         try {
-            data = await api("/teachers?" + params.toString() + "&_=" + Date.now(), { cache: "no-store" });
+            data = await api("/users?" + params.toString() + "&_=" + Date.now(), { cache: "no-store" });
         } catch (error) {
-            tbody.innerHTML = tableStateHTML("⚠",
-                "Could not load teachers: " + error.message, "error", 5);
+            tbody.innerHTML = '<tr><td colspan="5" class="state-cell error">' + escapeHTML(apiFailureMessage(error, "teacher records")) + ' <button type="button" class="table-action" id="retryTeachers">Retry</button></td></tr>';
+            document.getElementById("retryTeachers")?.addEventListener("click", loadTeachers);
             updateTeachersPagination(0);
             return;
         }
 
-        teachersCache = data.teachers || [];
-        const total = Number(data.total) || 0;
+        let parsed;
+        try {
+            parsed = parseTeacherListResponse(data);
+        } catch (error) {
+            tbody.innerHTML = tableStateHTML("⚠", "Could not load teacher records. Please try again.", "error", 5);
+            updateTeachersPagination(0);
+            return;
+        }
+        teachersCache = parsed.records;
+        const total = parsed.total;
         updateTeachersPagination(total);
 
         if (!teachersCache.length) {
-            tbody.innerHTML = tableStateHTML("♙",
-                "No teachers found. Add one with the button above.", "", 5);
+            if (total > 0) {
+                const totalPages = Math.max(1, Math.ceil(total / teachersPageSize));
+                if (teachersPage > totalPages) {
+                    teachersPage = totalPages;
+                    loadTeachers();
+                    return;
+                }
+                tbody.innerHTML = tableStateHTML("♙", "No teachers on this page.", "", 5);
+                return;
+            }
+            tbody.innerHTML = tableStateHTML("♙", "No teaching accounts found.", "", 5);
             return;
         }
 
@@ -2827,14 +3551,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const name = escapeHTML(teacher.name || "—");
             const email = escapeHTML(teacher.email || "—");
-            const role = escapeHTML(teacher.role || "—");
-            const subjectCount = escapeHTML(teacher.subject_count ?? "—");
+            const role = escapeHTML(roleLabel(teacher.role));
+            const subjects = Array.isArray(teacher.subjects) ? teacher.subjects : [];
+            const subjectNames = subjects.map(function (subject) {
+                if (typeof subject === "string") return subject;
+                return subject?.subject_name || subject?.name || "";
+            }).filter(Boolean);
+            const subjectList = escapeHTML(subjectNames.join(", ") || "No subjects assigned");
             return '<tr class="teacher-info-row">' +
                 '<td class="teacher-cell-name">' + name + '</td>' +
                 '<td class="teacher-cell-email">' + email + '</td>' +
                 '<td class="teacher-cell-role">' + role + '</td>' +
                 '<td class="teacher-cell-status">' + teacherStatusBadge(teacher.status) + '</td>' +
-                '<td class="teacher-cell-subjects">' + subjectCount + '</td>' +
+                '<td class="teacher-cell-subjects">' + subjectList + '</td>' +
             '</tr>' +
             '<tr class="teacher-actions-row">' +
                 '<td colspan="5">' +
@@ -2849,7 +3578,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const previous = document.getElementById("teachersPrev");
         const next = document.getElementById("teachersNext");
         const totalPages = Math.max(1, Math.ceil(total / teachersPageSize));
-        if (pageInfo) pageInfo.textContent = total ? `Page ${teachersPage} of ${totalPages} · ${total} teachers` : "No teacher records";
+        if (pageInfo) pageInfo.textContent = total ? `Page ${teachersPage} of ${totalPages} · ${total} ${total === 1 ? "teaching account" : "teaching accounts"}` : "No teacher records";
         if (previous) previous.disabled = teachersPage <= 1;
         if (next) next.disabled = teachersPage >= totalPages;
     }
@@ -2871,6 +3600,7 @@ document.addEventListener("DOMContentLoaded", function () {
         setValue("teacherName", teacher ? teacher.name : "");
         setValue("teacherEmail", teacher ? teacher.email : "");
         setValue("teacherPassword", teacher ? "" : "admin@123");
+        setValue("teacherRole", roleLabel(teacher?.role).toLowerCase());
 
         clearTeacherFormErrors();
         openModal("teacherDialog");
@@ -2887,7 +3617,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let teacherFormSubmitting = false;
 
     function clearTeacherFormErrors() {
-        ["teacherName", "teacherEmail", "teacherPassword"].forEach(function (field) {
+        ["teacherName", "teacherEmail", "teacherPassword", "teacherRole"].forEach(function (field) {
             const input = document.getElementById(field);
             if (input) input.classList.remove("input-error");
             const err = document.getElementById(field + "Error");
@@ -2921,6 +3651,17 @@ document.addEventListener("DOMContentLoaded", function () {
             const name = document.getElementById("teacherName").value.trim();
             const email = document.getElementById("teacherEmail").value.trim();
             const password = document.getElementById("teacherPassword").value;
+            const role = document.getElementById("teacherRole").value;
+
+            if (role !== "teacher" && role !== "admin") {
+                applyTeacherFieldError("teacherRole", "Select Teacher or Admin.");
+                showTeacherFormError("Choose a supported role before saving.");
+                return;
+            }
+            if (!isAdminUser()) {
+                showTeacherFormError("Only an administrator can change user roles.");
+                return;
+            }
 
             if (!name || !email) {
                 if (!name) applyTeacherFieldError("teacherName", "Teacher name is required.");
@@ -2929,7 +3670,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            const body = { name: name, email: email };
+            const body = { name: name, email: email, role: role };
             // Default password when left blank on create.
             if (password) body.password = password;
             else if (!editingTeacherId) body.password = "admin@123";
@@ -2942,16 +3683,20 @@ document.addEventListener("DOMContentLoaded", function () {
                     await apiRequest("/teachers/" + editingTeacherId, {
                         method: "PATCH", body: body, skipFallback: true
                     });
-                    showToast("Teacher updated: " + body.name);
+                    if (currentUser && String(currentUser.id) === String(editingTeacherId)) {
+                        await loadCurrentUser();
+                        navigateToPage(isAdminUser() ? "admin-dashboard" : "teacher-dashboard", { replace: true });
+                    }
+                    showToast("User updated: " + body.name);
                 } else {
                     await api("/teachers", { method: "POST", body: body });
-                    showToast("Teacher created: " + body.name);
+                    showToast((role === "admin" ? "Admin" : "Teacher") + " account created: " + body.name);
                     teachersPage = 1;
                 }
 
                 closeModal("teacherDialog");
                 clearTeacherFormErrors();
-                loadTeachers().catch(function () {});
+                await loadTeachers();
             } catch (error) {
                 const data = error && error.data ? error.data : null;
                 const detail = data && data.detail ? data.detail : null;
@@ -2965,11 +3710,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         if (field === "email") { applyTeacherFieldError("teacherEmail", msg); handled = true; }
                         else if (field === "password") { applyTeacherFieldError("teacherPassword", msg); handled = true; }
                         else if (field === "name") { applyTeacherFieldError("teacherName", msg); handled = true; }
+                        else if (field === "role") { applyTeacherFieldError("teacherRole", msg); handled = true; }
                     });
                 } else if (typeof detail === "string") {
                     const lower = detail.toLowerCase();
                     if (lower.includes("email")) applyTeacherFieldError("teacherEmail", detail);
                     else if (lower.includes("password")) applyTeacherFieldError("teacherPassword", detail);
+                    else if (lower.includes("role")) applyTeacherFieldError("teacherRole", detail);
                     else showTeacherFormError(detail);
                     handled = true;
                 }
@@ -2977,7 +3724,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!handled) {
                     showTeacherFormError((error && error.message) ? error.message : "Registration failed. Please try again.");
                 } else {
-                    const anyFieldError = ["teacherName", "teacherEmail", "teacherPassword"].some(function (f) {
+                    const anyFieldError = ["teacherName", "teacherEmail", "teacherPassword", "teacherRole"].some(function (f) {
                         const e = document.getElementById(f + "Error");
                         return e && e.textContent;
                     });
@@ -4389,6 +5136,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderPaperRow(paper) {
         const title = paper.paper_title || paper.title || "Untitled paper";
         const marks = paper.total_marks != null ? String(paper.total_marks) : "—";
+        const status = paper.generation_status || paper.status || (paper.docx_available ? "Stored" : "Unavailable");
         return "<tr>" +
             '<td class="paper-title" title="' + escapeHTML(title) + '">' + escapeHTML(title) + "</td>" +
             "<td>" + escapeHTML(paper.subject || "—") + "</td>" +
@@ -4396,12 +5144,13 @@ document.addEventListener("DOMContentLoaded", function () {
             "<td>" + escapeHTML(marks) + "</td>" +
             "<td>" + formatPaperDate(paper.generated_at) + "</td>" +
             "<td>" + escapeHTML(paper.duration || "—") + "</td>" +
+            "<td>" + escapeHTML(status) + "</td>" +
             paperRowActions(paper) +
             "</tr>";
     }
 
     function papersLoadingHTML() {
-        return tableStateHTML("⟳", "Loading question papers…", "loading", 7);
+        return tableStateHTML("⟳", "Loading question papers…", "loading", 8);
     }
 
     async function loadPapers() {
@@ -4412,7 +5161,7 @@ document.addEventListener("DOMContentLoaded", function () {
     async function fetchPapers() {
         const stat = document.getElementById("statPapers");
         const emptyHTML = tableStateHTML("📄",
-            "No question papers have been generated yet. Generate a paper to see it here.", "", 7);
+            "No question papers have been generated yet. Generate a paper to see it here.", "", 8);
 
         function setLoading(state) {
             ["papersTableBody", "adminPapersTableBody"].forEach(function (id) {
@@ -4430,7 +5179,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 "&page_size=" + papersPageSize);
         } catch (error) {
             const message = "Could not load question papers: " + error.message;
-            setLoading(tableStateHTML("⚠", message, "error", 7));
+            setLoading(tableStateHTML("⚠", message, "error", 8));
             updatePapersPagination(0);
             if (stat) stat.textContent = "Unavailable";
             unbindPapersTables();
@@ -4917,9 +5666,26 @@ document.addEventListener("DOMContentLoaded", function () {
         return id === "default-generic" || name === "default-generic" || id === "default" && Boolean(blueprint.is_default);
     }
 
-    function applyBlueprint(blueprint) {
+    function applyBlueprint(blueprint, context) {
         if (!blueprint) return;
         currentBlueprintId = blueprintIdOf(blueprint);
+        const ai = context === "ai" || (!context && isAiGenerationActive());
+        const blueprintName = document.getElementById(ai ? "aiBlueprintName" : "blueprintName");
+        const blueprintDescription = document.getElementById(ai ? "aiBlueprintDescription" : "blueprintDescription");
+        if (blueprintName) blueprintName.value = blueprint.name || "";
+        if (blueprintDescription) blueprintDescription.value = blueprint.description || "";
+        if (ai) {
+            const selectedSubject = document.getElementById("aiSubject")?.value || "";
+            if (blueprint.subject_id && selectedSubject && String(blueprint.subject_id) !== selectedSubject) {
+                setBlueprintStatus("This blueprint belongs to a different subject. The configured subject and syllabus were kept.", true);
+            }
+            aiRenderSections((blueprint.sections || []).map(function (section) {
+                return { name: section.name, count: Number(section.question_count ?? section.questions), marks: Number(section.marks_per_question ?? section.marks), type: section.question_type || section.type || "Short-answer", difficulty: section.difficulty || "Mixed", instructions: section.instructions || "" };
+            }));
+            updateAiSummary();
+            renderBlueprintSelect();
+            return;
+        }
         const subjectSelect = document.getElementById("paperSubject");
         if (subjectSelect && blueprint.subject_id) {
             subjectSelect.value = blueprint.subject_id;
@@ -4952,35 +5718,28 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function setBlueprintStatus(message, isError) {
-        const status = document.getElementById("blueprintStatus");
-        if (!status) return;
-        status.textContent = message || "";
-        status.style.color = isError ? "#dc2626" : "#16a34a";
+        [document.getElementById("blueprintStatus"), document.getElementById("aiBlueprintStatus")].filter(Boolean).forEach(function (status) {
+            status.textContent = message || "";
+            status.style.color = isError ? "#dc2626" : "#16a34a";
+        });
     }
 
     function renderBlueprintSelect() {
-        const select = document.getElementById("blueprintSelect");
-        if (!select) return;
+        const selects = [document.getElementById("blueprintSelect"), document.getElementById("aiBlueprintSelect")].filter(Boolean);
         const customBlueprints = (Array.isArray(blueprints) ? blueprints : []).filter(function (blueprint) {
             return !isCanonicalDefaultBlueprint(blueprint);
         });
         const current = currentBlueprintId || "";
-        if (!customBlueprints.length) {
-            select.innerHTML = '<option value="">No saved blueprints</option>';
-            select.value = "";
-            return;
-        }
-        select.innerHTML = customBlueprints.map(function (blueprint) {
+        const options = customBlueprints.length ? customBlueprints.map(function (blueprint) {
             const id = blueprintIdOf(blueprint);
             return '<option value="' + escapeHTML(String(id)) + '">' +
                 escapeHTML(blueprint.name || "") +
                 "</option>";
-        }).join("");
-        if (current && customBlueprints.some(function (b) { return String(blueprintIdOf(b)) === String(current); })) {
-            select.value = current;
-        } else {
-            select.value = "";
-        }
+        }).join("") : '<option value="">No saved blueprints</option>';
+        selects.forEach(function (select) {
+            select.innerHTML = options;
+            select.value = current && customBlueprints.some(function (b) { return String(blueprintIdOf(b)) === String(current); }) ? current : "";
+        });
     }
 
     async function loadBlueprints() {
@@ -4992,7 +5751,7 @@ document.addEventListener("DOMContentLoaded", function () {
             blueprints = (data.items || data.blueprints || []).filter(function (b) { return !isCanonicalDefaultBlueprint(b); });
             blueprintsLoaded = true;
             renderBlueprintSelect();
-            const firstCustom = blueprints[0];
+            const firstCustom = isAiGenerationActive() ? (blueprints.find(function (b) { return b.is_default; }) || blueprints[0]) : blueprints[0];
             if (firstCustom) {
                 applyBlueprint(firstCustom);
             } else {
@@ -5009,8 +5768,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function newBlueprint() {
         currentBlueprintId = null;
-        const nameInput = document.getElementById("blueprintName");
-        const descInput = document.getElementById("blueprintDescription");
+        const nameInput = document.getElementById(isAiGenerationActive() ? "aiBlueprintName" : "blueprintName");
+        const descInput = document.getElementById(isAiGenerationActive() ? "aiBlueprintDescription" : "blueprintDescription");
         if (nameInput) nameInput.value = "";
         if (descInput) descInput.value = "";
         renderBlueprintSelect();
@@ -5025,7 +5784,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const current = blueprints.find(function (b) { return String(blueprintIdOf(b)) === String(currentBlueprintId); });
         const proposed = window.prompt("Rename blueprint", current ? (current.name || "") : "");
         if (proposed === null) return;
-        const nameInput = document.getElementById("blueprintName");
+        const nameInput = document.getElementById(isAiGenerationActive() ? "aiBlueprintName" : "blueprintName");
         if (nameInput) nameInput.value = proposed.trim();
         await saveBlueprint();
     }
@@ -5070,20 +5829,25 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function saveBlueprint() {
-        const nameInput = document.getElementById("blueprintName");
-        const descInput = document.getElementById("blueprintDescription");
+        const ai = isAiGenerationActive();
+        const nameInput = document.getElementById(ai ? "aiBlueprintName" : "blueprintName");
+        const descInput = document.getElementById(ai ? "aiBlueprintDescription" : "blueprintDescription");
         const name = nameInput ? nameInput.value.trim() : "";
         if (!name) {
             setBlueprintStatus("Blueprint name is required.", true);
             return;
         }
-        readSectionsFromTable();
-        if (!validateSections()) {
-            setBlueprintStatus("Section totals must equal total marks before saving.", true);
-            return;
+        let blueprintSections;
+        if (ai) {
+            blueprintSections = aiSections();
+            if (!validateAiSections()) { setBlueprintStatus("Section totals must equal total marks before saving.", true); return; }
+        } else {
+            readSectionsFromTable();
+            if (!validateSections()) { setBlueprintStatus("Section totals must equal total marks before saving.", true); return; }
+            blueprintSections = toBackendSections();
         }
-        const subject = document.getElementById("paperSubject")?.value || null;
-        const examType = document.getElementById("examType")?.value.trim() || null;
+        const subject = document.getElementById(ai ? "aiSubject" : "paperSubject")?.value || null;
+        const examType = document.getElementById(ai ? "aiExamType" : "examType")?.value.trim() || null;
         const current = blueprints.find(item => String(blueprintIdOf(item)) === String(currentBlueprintId));
         if (isCanonicalDefaultBlueprint(current)) {
             setBlueprintStatus("The default blueprint is protected. Duplicate it before saving changes.", true);
@@ -5096,10 +5860,12 @@ document.addEventListener("DOMContentLoaded", function () {
             description: descInput ? descInput.value.trim() || null : null,
             subject_id: subject,
             exam_type: examType,
-            sections: toBackendSections(),
+            sections: blueprintSections.map(function (section) {
+                return ai ? { name: section.name, question_count: section.count, marks_per_question: section.marks, question_type: section.type, difficulty: section.difficulty, instructions: section.instructions } : section;
+            }),
             is_default: current ? Boolean(current.is_default) : blueprints.length === 0
         };
-        const saveButton = document.getElementById("saveBlueprintButton");
+        const saveButton = document.getElementById(ai ? "aiSaveBlueprintButton" : "saveBlueprintButton");
         if (saveButton) {
             saveButton.disabled = true;
             saveButton.textContent = "Saving…";
@@ -5119,13 +5885,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
             }
             const savedId = blueprintIdOf(saved) || blueprintId;
+            const aiSettingsPersisted = !ai || (Array.isArray(saved.sections) && saved.sections.length === blueprintSections.length && blueprintSections.every(function (section, index) {
+                const stored = saved.sections[index] || {};
+                return (stored.question_type ?? stored.type) === section.type && stored.difficulty === section.difficulty && (stored.instructions || "") === (section.instructions || "");
+            }));
+            if (ai && !aiSettingsPersisted) saved = { ...saved, sections: payload.sections };
             blueprintsLoaded = true;
             const existingIndex = blueprints.findIndex(function (b) { return String(blueprintIdOf(b)) === String(savedId); });
             if (existingIndex >= 0) blueprints[existingIndex] = saved;
             else blueprints.push(saved);
             currentBlueprintId = savedId;
             renderBlueprintSelect();
-            setBlueprintStatus("Blueprint saved.", false);
+            setBlueprintStatus(ai && !aiSettingsPersisted ? "Blueprint saved, but the backend response omitted AI section settings; reloading may use defaults." : "Blueprint saved.", ai && !aiSettingsPersisted);
         } catch (error) {
             setBlueprintStatus("Save failed: " + error.message, true);
         } finally {
@@ -5859,6 +6630,14 @@ document.addEventListener("DOMContentLoaded", function () {
         total_marks: "totalMarks",
         instructions: "paperInstructions"
     };
+    const AI_CONFIG_INPUT_IDS = {
+        university: "aiUniversity", college: "aiCollege", department: "aiDepartment", paper_title: "aiPaperTitle",
+        academic_year: "aiAcademicYear", semester: "aiSemester", exam_type: "aiExamType", subject: "aiSubject",
+        subject_code: "aiSubjectCode", exam_date: "aiExamDate", duration: "aiDuration", total_marks: "aiTotalMarks", instructions: "aiInstructions"
+    };
+    function isAiGenerationActive() { const page = document.getElementById("ai-generation"); return Boolean(page && !page.classList.contains("hidden")); }
+    function configFieldId(key) { return (isAiGenerationActive() ? AI_CONFIG_INPUT_IDS : CONFIG_INPUT_IDS)[key]; }
+    function configControl(base) { return document.getElementById(isAiGenerationActive() ? "ai" + base : base.charAt(0).toLowerCase() + base.slice(1)); }
 
     let savedConfigs = [];
     let currentConfigId = null;
@@ -5885,31 +6664,40 @@ document.addEventListener("DOMContentLoaded", function () {
     function collectedConfigValues() {
         const values = {};
         Object.keys(CONFIG_INPUT_IDS).forEach(function (key) {
-            values[key] = String(document.getElementById(CONFIG_INPUT_IDS[key])?.value ?? "");
+            values[key] = String(document.getElementById(configFieldId(key))?.value ?? "");
         });
         return values;
     }
 
     function applyConfigValues(values) {
-        const previousSubject = document.getElementById("paperSubject")?.value || "";
+        const aiActive = isAiGenerationActive();
+        const previousSubject = aiActive
+            ? (aiState.selectedSubjectId || document.getElementById("aiSubject")?.value || "")
+            : (document.getElementById(configFieldId("subject"))?.value || "");
         Object.keys(CONFIG_INPUT_IDS).forEach(function (key) {
-            const input = document.getElementById(CONFIG_INPUT_IDS[key]);
+            const input = document.getElementById(configFieldId(key));
             if (!input) return;
             const value = String(values[key] ?? "");
             if (key === "subject" && input.tagName === "SELECT") {
-                const match = Array.from(input.options || []).some(function (option) { return option.value === value; });
-                input.value = match ? value : "";
+                if (aiActive) setAiSubject(value);
+                else {
+                    const match = Array.from(input.options || []).some(function (option) { return option.value === value; });
+                    input.value = match ? value : "";
+                }
             } else {
                 input.value = value;
             }
         });
-        const subject = document.getElementById("paperSubject")?.value || "";
-        if (subject && subject !== previousSubject) {
-            loadSubjectMarks(subject);
-            loadQuestionBank(subject);
+        const subject = aiActive ? (aiState.selectedSubjectId || "") : (document.getElementById(configFieldId("subject"))?.value || "");
+        let subjectLoad = null;
+        if (aiActive && subject !== previousSubject) {
+            subjectLoad = loadAiSyllabuses(subject);
+        } else if (!aiActive && subject && subject !== previousSubject) {
+            loadSubjectMarks(subject); loadQuestionBank(subject);
         }
-        validateSections();
-        updateGenerationSummary();
+        if (aiActive) updateAiSummary();
+        else { validateSections(); updateGenerationSummary(); }
+        return subjectLoad;
     }
 
     function isConfigDirty() {
@@ -5918,32 +6706,31 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function setConfigStatus(message, isError) {
-        const status = document.getElementById("configStatus");
-        if (!status) return;
-        status.textContent = message || "";
-        status.style.color = isError ? "#dc2626" : "#16a34a";
+        [document.getElementById("configStatus"), document.getElementById("aiConfigStatus")].filter(Boolean).forEach(function (status) {
+            status.textContent = message || "";
+            status.style.color = isError ? "#dc2626" : "#16a34a";
+        });
     }
 
     function renderConfigSelect() {
-        const select = document.getElementById("configSelect");
-        if (!select) return;
         const ordered = savedConfigs.slice().sort(function (a, b) {
             return (b.is_default === true) - (a.is_default === true);
         });
-        select.innerHTML = ordered.length
+        const options = ordered.length
             ? ordered.map(function (config) {
                 return '<option value="' + escapeHTML(config.config_id) + '">' +
                     (config.is_default ? "★ " : "") + escapeHTML(config.name) +
                     "</option>";
             }).join("")
             : '<option value="">No saved configurations yet</option>';
-        select.value = currentConfigId && savedConfigs.some(function (config) {
-            return config.config_id === currentConfigId;
-        }) ? currentConfigId : "";
+        [document.getElementById("configSelect"), document.getElementById("aiConfigSelect")].filter(Boolean).forEach(function (select) {
+            select.innerHTML = options;
+            select.value = currentConfigId && savedConfigs.some(function (config) { return config.config_id === currentConfigId; }) ? currentConfigId : "";
+        });
     }
 
     async function loadSavedConfigs() {
-        const select = document.getElementById("configSelect");
+        const select = document.getElementById("configSelect") || document.getElementById("aiConfigSelect");
         if (!select) return;
         setConfigStatus("Loading saved configurations…", false);
         try {
@@ -5954,7 +6741,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 savedConfigs[0].is_default = true;
             }
             renderConfigSelect();
-            applyStartupConfig();
+            await applyStartupConfig();
         } catch (error) {
             savedConfigs = [];
             currentConfigId = null;
@@ -5963,16 +6750,18 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function applyStartupConfig() {
+    async function applyStartupConfig() {
         const config = savedConfigs.find(function (item) { return item.is_default; }) || savedConfigs[0];
-        const nameInput = document.getElementById("configName");
+        const nameInput = configControl("ConfigName");
         if (config) {
             currentConfigId = config.config_id;
             renderConfigSelect();
             if (nameInput) nameInput.value = config.name;
-            applyConfigValues(config.values);
+            await applyConfigValues(config.values);
             configValuesBaseline = JSON.stringify(collectedConfigValues());
-            setConfigStatus('Loaded "' + config.name + '"' + (config.is_default ? " (default)" : "") + ".", false);
+            const unavailableSubject = isAiGenerationActive() && config.values.subject && !resolveAiSubject(config.values.subject);
+            const subjectMessage = unavailableSubject ? aiSubjectIssue(config.values.subject) : "";
+            setConfigStatus(unavailableSubject ? `Configuration loaded, but ${subjectMessage.charAt(0).toLowerCase() + subjectMessage.slice(1)}` : 'Loaded "' + config.name + '"' + (config.is_default ? " (default)" : "") + ".", Boolean(unavailableSubject));
         } else {
             currentConfigId = null;
             renderConfigSelect();
@@ -5983,14 +6772,14 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function saveConfiguration() {
-        const nameInput = document.getElementById("configName");
+        const nameInput = configControl("ConfigName");
         const name = nameInput ? nameInput.value.trim() : "";
         if (!name) {
             setConfigStatus("Configuration name is required.", true);
             if (nameInput) nameInput.focus();
             return;
         }
-        const button = document.getElementById("saveConfigButton");
+        const button = configControl("SaveConfigButton");
         if (button) setButtonLoading(button, true, "Saving…");
         const values = collectedConfigValues();
         try {
@@ -6031,7 +6820,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
         currentConfigId = null;
-        const nameInput = document.getElementById("configName");
+        const nameInput = configControl("ConfigName");
         if (nameInput) nameInput.value = "";
         renderConfigSelect();
         configValuesBaseline = JSON.stringify(collectedConfigValues());
@@ -6048,7 +6837,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const proposed = window.prompt("Duplicate configuration as", suggestedName);
         if (proposed === null) return;
         const name = proposed.trim() || suggestedName;
-        const button = document.getElementById("duplicateConfigButton");
+        const button = configControl("DuplicateConfigButton");
         if (button) setButtonLoading(button, true, "Duplicating…");
         try {
             const sourceValues = source
@@ -6063,7 +6852,7 @@ document.addEventListener("DOMContentLoaded", function () {
             savedConfigs.push(savedConfig);
             currentConfigId = savedConfig.config_id;
             renderConfigSelect();
-            const nameInput = document.getElementById("configName");
+            const nameInput = configControl("ConfigName");
             if (nameInput) nameInput.value = name;
             applyConfigValues(savedConfig.values);
             configValuesBaseline = JSON.stringify(collectedConfigValues());
@@ -6098,7 +6887,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (existingIndex >= 0) savedConfigs[existingIndex] = updatedConfig;
             source.name = updatedConfig.name;
             renderConfigSelect();
-            const nameInput = document.getElementById("configName");
+            const nameInput = configControl("ConfigName");
             if (nameInput) nameInput.value = updatedConfig.name;
             setConfigStatus('Renamed to "' + updatedConfig.name + '".', false);
         } catch (error) {
@@ -6142,7 +6931,7 @@ document.addEventListener("DOMContentLoaded", function () {
             savedConfigs = savedConfigs.filter(function (config) { return config.config_id !== source.config_id; });
             currentConfigId = null;
             renderConfigSelect();
-            applyStartupConfig();
+            await applyStartupConfig();
             const fallback = savedConfigs.find(function (config) { return config.is_default; }) || savedConfigs[0];
             setConfigStatus("Configuration deleted." + (fallback ? ' Loaded "' + fallback.name + '".' : ""), false);
         } catch (error) {
@@ -6150,7 +6939,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function chooseConfig(configId) {
+    async function chooseConfig(configId) {
         if (configId === currentConfigId) return;
         if (isConfigDirty() &&
             !window.confirm("You have unsaved configuration changes. Discard them and switch?")) {
@@ -6161,15 +6950,17 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!config) { renderConfigSelect(); return; }
         currentConfigId = config.config_id;
         renderConfigSelect();
-        const nameInput = document.getElementById("configName");
+        const nameInput = configControl("ConfigName");
         if (nameInput) nameInput.value = config.name;
-        applyConfigValues(config.values);
+        await applyConfigValues(config.values);
         configValuesBaseline = JSON.stringify(collectedConfigValues());
-        setConfigStatus('Loaded "' + config.name + '".', false);
+        const unavailableSubject = isAiGenerationActive() && config.values.subject && !resolveAiSubject(config.values.subject);
+        const subjectMessage = unavailableSubject ? aiSubjectIssue(config.values.subject) : "";
+        setConfigStatus(unavailableSubject ? `Configuration loaded, but ${subjectMessage.charAt(0).toLowerCase() + subjectMessage.slice(1)}` : 'Loaded "' + config.name + '".', Boolean(unavailableSubject));
     }
 
-    if (document.getElementById("configSelect")) {
-        Object.values(CONFIG_INPUT_IDS).forEach(function (id) {
+    if (document.getElementById("configSelect") || document.getElementById("aiConfigSelect")) {
+        Object.values(CONFIG_INPUT_IDS).concat(Object.values(AI_CONFIG_INPUT_IDS)).forEach(function (id) {
             const input = document.getElementById(id);
             if (!input) return;
             ["input", "change"].forEach(function (type) {
@@ -6179,15 +6970,8 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
-        document.getElementById("configSelect")?.addEventListener("change", function (event) {
-            chooseConfig(event.target.value);
-        });
-        document.getElementById("newConfigButton")?.addEventListener("click", newConfiguration);
-        document.getElementById("saveConfigButton")?.addEventListener("click", saveConfiguration);
-        document.getElementById("duplicateConfigButton")?.addEventListener("click", duplicateConfiguration);
-        document.getElementById("renameConfigButton")?.addEventListener("click", renameConfiguration);
-        document.getElementById("setDefaultConfigButton")?.addEventListener("click", setDefaultConfiguration);
-        document.getElementById("deleteConfigButton")?.addEventListener("click", deleteConfiguration);
+        ["configSelect", "aiConfigSelect"].forEach(id => document.getElementById(id)?.addEventListener("change", event => chooseConfig(event.target.value)));
+        [["newConfigButton", newConfiguration], ["aiNewConfigButton", newConfiguration], ["saveConfigButton", saveConfiguration], ["aiSaveConfigButton", saveConfiguration], ["duplicateConfigButton", duplicateConfiguration], ["aiDuplicateConfigButton", duplicateConfiguration], ["renameConfigButton", renameConfiguration], ["aiRenameConfigButton", renameConfiguration], ["setDefaultConfigButton", setDefaultConfiguration], ["aiSetDefaultConfigButton", setDefaultConfiguration], ["deleteConfigButton", deleteConfiguration], ["aiDeleteConfigButton", deleteConfiguration]].forEach(([id, handler]) => document.getElementById(id)?.addEventListener("click", handler));
     }
 
     document.getElementById("saveGeneratedPaper")?.classList.add("hidden");
@@ -6715,6 +7499,408 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     /* INITIALIZE */
+
+    // Syllabus controls and section based AI generation.
+    document.getElementById("syllabusSubjectFilter")?.addEventListener("change",event=>{
+        const selected = event.target.value;
+        if (selected && !syllabusState.subjects.some(subject => String(subject.id) === String(selected))) {
+            event.target.value = "";
+            syllabusState.selectedSubjectId = "";
+            const body = document.getElementById("syllabusTableBody");
+            if (body) body.innerHTML = '<tr><td colspan="2" class="state-cell">Select a valid subject.</td></tr>';
+            updateSyllabusUploadButton();
+            return;
+        }
+        syncSyllabusSubjectSelection(selected);
+        loadSyllabusLibrary();
+    });
+    ["syllabusStatusFilter", "syllabusSearch"].forEach(id => document.getElementById(id)?.addEventListener(id === "syllabusSearch" ? "input" : "change", renderSyllabusRows));
+    const syllabusUploadDialog = document.getElementById("syllabusUploadDialog");
+    document.getElementById("syllabusUploadButton")?.addEventListener("click", async () => { if (!syllabusState.canUpload) return; syllabusState.replaceExisting=false;syllabusState.replacingRecord=null;document.getElementById("syllabusUploadMessage").textContent="";document.getElementById("syllabusUploadTitle").textContent="Upload Syllabus PDF";syllabusUploadDialog?.showModal();const subjectSelect=document.getElementById("syllabusUploadSubject");subjectSelect.disabled=false;try{await loadSyllabusSubjects();const selected=syllabusState.selectedSubjectId;subjectSelect.value=syllabusState.subjects.some(subject=>String(subject.id)===selected)?selected:"";if(!syllabusState.subjects.length&&!isAdminUser())document.getElementById("syllabusUploadMessage").textContent="No subjects are assigned to your account.";validateSyllabusFile(syllabusFileInput?.files?.[0]);}catch(error){console.error("[Syllabus Library] Upload subjects could not be loaded:",error);document.getElementById("syllabusUploadMessage").textContent=apiFailureMessage(error,"available subjects");const placeholder=error?.responseParseError?"Could not read the subject data returned by the API.":error?.status===403?"You do not have permission to access these subjects.":"Could not connect to the API server.";setSubjectOptions(subjectSelect,syllabusState.subjects,placeholder,syllabusState.selectedSubjectId);subjectSelect.disabled=!syllabusState.subjects.length;}});
+    document.getElementById("syllabusCancelUpload")?.addEventListener("click", () => { if (!syllabusState.activeUpload) syllabusUploadDialog?.close(); });
+    document.querySelectorAll('[data-close="syllabusUploadDialog"]').forEach(button => button.addEventListener("click", () => { if (!syllabusState.activeUpload) syllabusUploadDialog?.close(); }));
+    const syllabusFileInput=document.getElementById("syllabusUploadFile");
+    function showSelectedSyllabusFile(file) { const label=document.getElementById("syllabusUploadFileName"); if(label) label.textContent=file ? `${file.name} · ${formatFileSize(file.size)}` : "No file selected."; }
+    function validateSyllabusFile(file) {
+        const error=document.getElementById("syllabusUploadFileError");
+        let message="";
+        if(file && (!/\.pdf$/i.test(file.name) || (file.type && file.type!=="application/pdf"))) message="Unsupported file format. Select a PDF file.";
+        else if(file && file.size===0) message="The selected PDF is empty.";
+        else if(file && file.size>50*1024*1024) message="This file exceeds the 50 MB upload limit.";
+        if(error)error.textContent=message;
+        const selectedSubjectId = document.getElementById("syllabusUploadSubject")?.value || "";
+        const validSubject = syllabusState.subjects.some(subject => String(subject.id) === selectedSubjectId);
+        const ready=Boolean(file)&&!message&&syllabusState.canUpload&&validSubject;
+        document.getElementById("syllabusUploadSubmit").disabled=!ready;
+        return !message;
+    }
+    syllabusFileInput?.addEventListener("change",()=>{showSelectedSyllabusFile(syllabusFileInput.files?.[0]);validateSyllabusFile(syllabusFileInput.files?.[0]);});
+    document.getElementById("syllabusUploadSubject")?.addEventListener("change",event=>{
+        const selected = event.target.value;
+        if (selected && !syllabusState.subjects.some(subject => String(subject.id) === String(selected))) {
+            event.target.value = "";
+            validateSyllabusFile(syllabusFileInput?.files?.[0]);
+            document.getElementById("syllabusUploadMessage").textContent = "Select a valid subject.";
+            return;
+        }
+        syncSyllabusSubjectSelection(selected);
+        loadSyllabusLibrary();
+    });
+    const uploadDropLabel=document.getElementById("syllabusDropArea");
+    uploadDropLabel?.addEventListener("dragover",event=>{event.preventDefault();uploadDropLabel.classList.add("is-dragover");});
+    uploadDropLabel?.addEventListener("dragleave",()=>uploadDropLabel.classList.remove("is-dragover"));
+    uploadDropLabel?.addEventListener("drop",event=>{event.preventDefault();uploadDropLabel.classList.remove("is-dragover");const file=event.dataTransfer?.files?.[0];if(!file)return;try{const transfer=new DataTransfer();transfer.items.add(file);syllabusFileInput.files=transfer.files;syllabusFileInput.dispatchEvent(new Event("change",{bubbles:true}));}catch(_){showSelectedSyllabusFile(file);validateSyllabusFile(file);}});
+    syllabusUploadDialog?.addEventListener("cancel",event=>{if(syllabusState.activeUpload)event.preventDefault();});
+    function uploadSyllabusFile(subject,file,onProgress) {
+        return new Promise((resolve,reject)=>{
+            const request=new XMLHttpRequest(); request.open("POST",API_BASE+"/api/smart-qpg/syllabi");
+            const token=getToken(); if(token) request.setRequestHeader("Authorization","Bearer "+token);
+            request.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.round(event.loaded/event.total*100));};
+            request.onerror=()=>reject(new Error("Cannot reach server at "+API_BASE));
+            request.onload=()=>{let data;try{data=JSON.parse(request.responseText);}catch(_){data=request.responseText;}
+                if(request.status>=200&&request.status<300){resolve(data);return;}
+                if(request.status===401){clearSession();if(typeof onUnauthorized==="function")onUnauthorized();}
+                const detail=typeof data==="object"?(data.detail||data.message):data; const readable=Array.isArray(detail)?detail.map(item=>{const field=Array.isArray(item.loc)?item.loc.slice(1).join("."):"";return [field,item.msg||item.message].filter(Boolean).join(": ");}).join("; "):typeof detail==="object"?detail.message:detail; const err=new Error(typeof readable==="string"?readable:`${request.status} ${request.statusText}`);err.status=request.status;reject(err);
+            };
+            const form=new FormData();form.append("subject_id",subject);form.append("file",file);form.append("replace",String(syllabusState.replaceExisting));if(syllabusState.replacingRecord){form.append("syllabus_name",syllabusState.replacingRecord.syllabus_name||syllabusState.replacingRecord.name||"");if(syllabusState.replacingRecord.academic_year)form.append("academic_year",syllabusState.replacingRecord.academic_year);}request.send(form);syllabusState.activeUpload=request;
+        });
+    }
+    document.getElementById("syllabusUploadForm")?.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!syllabusState.canUpload) return;
+        const subject = document.getElementById("syllabusUploadSubject")?.value, file = syllabusFileInput?.files?.[0], button = document.getElementById("syllabusUploadSubmit"), msg = document.getElementById("syllabusUploadMessage"), progress=document.getElementById("syllabusUploadProgress"), progressWrap=document.getElementById("syllabusUploadProgressWrap"), progressLabel=document.getElementById("syllabusUploadProgressLabel");
+        if (!subject || !syllabusState.subjects.some(item => String(item.id) === String(subject))) { if(msg) msg.textContent = "Select a valid subject."; return; }
+        if (!file) { if(msg) msg.textContent = "Choose a PDF file."; return; }
+        if (!validateSyllabusFile(file)) { if(msg) msg.textContent=document.getElementById("syllabusUploadFileError").textContent; return; }
+        syllabusState.uploading = true;
+        button.disabled = true; document.getElementById("syllabusCancelUpload").disabled=true; progressWrap?.classList.remove("hidden"); if(msg) msg.textContent = "Uploading PDF…";
+        try {
+            const uploaded=await uploadSyllabusFile(subject,file,value=>{if(progress)progress.value=value;if(progressLabel)progressLabel.textContent=`${value}%`;});
+            const syllabusId=uploaded.syllabus_id ?? uploaded.id;
+            const subjectName=syllabusState.subjects.find(item=>String(item.id)===String(subject))?.name||"";
+            syllabusState.recentUpload={...uploaded,id:syllabusId,subject_id:subject,subject:subjectName,filename:file.name,original_filename:file.name,status:uploaded.status||uploaded.processing_status||"pending"};
+            updateSyllabusProcessingNotice(syllabusState.recentUpload);
+            syncSyllabusSubjectSelection(subject);
+            if(msg) msg.textContent=`Upload complete · summarisation ${String(syllabusState.recentUpload.status).toLowerCase()}.`;
+            showToast(`Uploaded ${file.name}. Summarisation is ${String(syllabusState.recentUpload.status).toLowerCase()}.`); await loadSyllabusLibrary();
+            syllabusUploadDialog?.close();event.target.reset();showSelectedSyllabusFile(null);if(progress)progress.value=0;if(progressLabel)progressLabel.textContent="0%";
+        }
+        catch(error) { if(msg)msg.textContent=apiFailureMessage(error,"syllabus upload"); }
+        finally { syllabusState.uploading = false;syllabusState.activeUpload=null;document.getElementById("syllabusCancelUpload").disabled=false;const selected=syllabusFileInput?.files?.[0],subjectSelected=document.getElementById("syllabusUploadSubject")?.value;button.disabled=!syllabusState.canUpload||!subjectSelected||!selected||!validateSyllabusFile(selected); }
+    });
+    function renderSyllabusSummary(container, record) {
+        container.replaceChildren();
+        const object = value => value && typeof value === "object" && !Array.isArray(value);
+        const first = (source, keys) => {
+            for (const key of keys) if (source?.[key] != null && source[key] !== "") return source[key];
+            return null;
+        };
+        const words = value => String(value).replaceAll("_", " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, char => char.toUpperCase());
+        const readable = value => typeof value === "string" || typeof value === "number" ? String(value) : "";
+        const heading = (parent, tag, value, className) => {
+            const element = document.createElement(tag);
+            element.textContent = readable(value);
+            if (className) element.className = className;
+            parent.append(element);
+            return element;
+        };
+        const list = (parent, label, value) => {
+            if (value == null || value === "") return false;
+            const recordKeys = ["name", "title", "topic_name", "topic_title", "resource_name", "reference", "citation", "text", "url", "description", "details"];
+            const values = Array.isArray(value) ? value : object(value) && !first(value, recordKeys)
+                ? Object.entries(value).map(([key, detail]) => ({ name: words(key), details: Array.isArray(detail) ? detail.map(readable).filter(Boolean).join(" · ") : readable(detail) }))
+                : [value];
+            if (!values.length) return false;
+            const section = document.createElement("section");
+            if (label) heading(section, "h4", label);
+            const ul = document.createElement("ul");
+            values.forEach(entry => {
+                const item = document.createElement("li");
+                if (readable(entry)) item.textContent = readable(entry);
+                else if (object(entry)) {
+                    const name = first(entry, ["name", "title", "topic_name", "topic_title", "resource_name", "reference", "citation", "text", "url"]);
+                    const detail = first(entry, ["description", "details", "author", "publisher", "year"]);
+                    if (readable(name)) {
+                        const strong = document.createElement("strong"); strong.textContent = readable(name); item.append(strong);
+                    }
+                    if (readable(detail)) { const span = document.createElement("span"); span.textContent = ` — ${readable(detail)}`; item.append(span); }
+                    if (!item.textContent.trim()) {
+                        const fields = Object.entries(entry).filter(([, value]) => readable(value));
+                        item.textContent = fields.map(([key, value]) => `${words(key)}: ${readable(value)}`).join(" · ");
+                    }
+                }
+                if (item.textContent.trim()) ul.append(item);
+            });
+            if (!ul.childElementCount) return false;
+            section.append(ul); parent.append(section); return true;
+        };
+        const info = record.summary_data;
+        const subjectInfo = first(info, ["subject_information", "subject_info", "subject_details"]);
+        const modules = first(info, ["modules", "syllabus_modules", "course_modules"]);
+        const populated = value => Array.isArray(value) ? value.length > 0
+            : object(value) ? Object.keys(value).length > 0
+                : value != null && String(value).trim() !== "";
+        const structured = object(info) && (
+            (Array.isArray(modules) && modules.some(module => object(module) && Object.keys(module).length > 0)) || populated(modules) || populated(subjectInfo) ||
+            ["course_objectives", "learning_outcomes", "references", "digital_learning_resources", "question_generation_guidance"].some(key => populated(info[key]))
+        );
+
+        if (structured) {
+            const subject = object(subjectInfo) ? subjectInfo : info;
+            const subjectName = first(subject, ["subject_name", "name", "course_name", "title"]) || record.subject_name || record.subject;
+            if (readable(subjectName)) heading(container, "h3", subjectName, "syllabus-summary-subject-title");
+            const objectives = first(subject, ["course_objectives", "objectives", "course_objectives_list"]);
+            const outcomes = first(subject, ["learning_outcomes", "course_outcomes", "outcomes"]);
+            list(container, "Course Objectives", objectives);
+            list(container, "Learning Outcomes", outcomes);
+
+            const topicList = (parent, topics) => list(parent, null, topics);
+            const renderSection = (parent, section) => {
+                if (readable(section)) { heading(parent, "h5", section, "syllabus-summary-section-heading"); return; }
+                if (!object(section)) return;
+                const sectionName = first(section, ["heading", "section_heading", "section_name", "section_title", "name", "title", "heading_name"]);
+                if (readable(sectionName)) heading(parent, "h5", sectionName, "syllabus-summary-section-heading");
+                const topics = first(section, ["topics", "topic_list", "subtopics", "items", "content"]);
+                topicList(parent, topics);
+            };
+            const additional = first(info, ["additional_information", "additional_info", "resources_and_assessment"]);
+            const moduleRecords = Array.isArray(modules) ? modules
+                : object(modules) ? Object.entries(modules).map(([name, value]) => object(value) ? { module_name: name, ...value } : { module_name: name, topics: value }) : [];
+            moduleRecords.forEach((module, index) => {
+                if (!object(module)) return;
+                const moduleSection = document.createElement("section");
+                moduleSection.className = "syllabus-summary-module";
+                const rawModuleName = first(module, ["module_name", "name", "title", "module_title", "module", "heading"]);
+                const moduleNumber = first(module, ["module_number", "module_no", "number", "module_index"]);
+                let moduleName = readable(rawModuleName) || "";
+                if (!/^module\b/i.test(moduleName)) {
+                    const prefix = moduleNumber == null ? `Module ${index + 1}` : /^module\b/i.test(readable(moduleNumber)) ? readable(moduleNumber) : `Module ${readable(moduleNumber)}`;
+                    moduleName = moduleName ? `${prefix} – ${moduleName}` : prefix;
+                }
+                const moduleTitle = document.createElement("h4");
+                moduleTitle.textContent = readable(moduleName);
+                const hours = first(module, ["allocated_hours", "hours_allocated", "hours", "module_hours", "duration_hours", "teaching_hours", "contact_hours"]);
+                if (hours != null && readable(hours)) {
+                    const badge = document.createElement("span"); badge.className = "syllabus-summary-hours";
+                    badge.textContent = /hour/i.test(readable(hours)) ? readable(hours) : `${readable(hours)} Hours`;
+                    moduleTitle.append(" ", badge);
+                }
+                moduleSection.append(moduleTitle);
+                const sections = first(module, ["sections", "headings", "units", "contents", "syllabus_sections", "module_sections"]);
+                if (Array.isArray(sections)) sections.forEach(section => renderSection(moduleSection, section));
+                else if (object(sections)) Object.entries(sections).forEach(([name, topics]) => renderSection(moduleSection, { heading: name, topics }));
+                else topicList(moduleSection, first(module, ["topics", "topic_list", "syllabus_topics", "section_topics"]));
+                container.append(moduleSection);
+            });
+
+            list(container, "References", first(additional, ["references", "bibliography", "reference_books"]) ?? first(info, ["references", "bibliography", "reference_books"]));
+            list(container, "Digital Learning Resources", first(additional, ["digital_learning_resources", "digital_resources", "online_resources", "learning_resources"]) ?? first(info, ["digital_learning_resources", "digital_resources", "online_resources", "learning_resources"]));
+            list(container, "Assessment Information", first(additional, ["assessment_information", "assessment", "assessment_methods"]) ?? first(info, ["assessment_information", "assessment", "assessment_methods"]));
+
+            const guidance = first(info, ["question_generation_guidance", "question_generation_guidelines"]);
+            if (guidance != null) {
+                const details = document.createElement("details"); details.className = "syllabus-summary-guidance";
+                heading(details, "summary", "AI-Generated Question Generation Guidance");
+                const guidanceBody = document.createElement("div"); guidanceBody.className = "syllabus-summary-guidance-body";
+                const renderGuidanceTopic = (topic, parent = guidanceBody) => {
+                    if (!object(topic)) return list(parent, null, topic);
+                    const topicBox = document.createElement("section"); topicBox.className = "syllabus-summary-guidance-topic";
+                    heading(topicBox, "h6", first(topic, ["topic_name", "topic", "name", "title"]) || "Topic guidance");
+                    list(topicBox, "Topic Categories", first(topic, ["topic_categories", "categories", "category"]));
+                    list(topicBox, "Suitable Question Formats", first(topic, ["suitable_question_formats", "recommended_question_formats", "suitable_question_types", "question_formats", "formats", "question_types"]));
+                    list(topicBox, "Suggested Marks (AI-generated guidance)", first(topic, ["suggested_marks", "suggested_mark_ranges", "recommended_marks", "marks", "mark_ranges"]));
+                    list(topicBox, "Difficulty Levels", first(topic, ["difficulty_levels", "difficulty"]));
+                    list(topicBox, "Importance Rationale (AI-generated guidance)", first(topic, ["importance_rationale", "importance_reason", "importance", "rationale"]));
+                    list(topicBox, "Coverage Suggestions", first(topic, ["coverage_suggestions", "coverage", "suggestions"]));
+                    parent.append(topicBox);
+                };
+                const guidanceTopicKeys = ["topic_name", "categories", "topic_categories", "suitable_question_formats", "question_formats", "suggested_marks", "importance_rationale", "coverage_suggestions"];
+                const directGuidanceTopic = object(guidance) && guidanceTopicKeys.some(key => guidance[key] != null);
+                const directGuidanceModules = Array.isArray(guidance) && guidance.some(module => object(module)
+                    && (module.module_name != null || module.module != null || module.sections != null || module.headings != null || module.topics_by_heading != null));
+                const guidanceModulesRaw = first(guidance, ["modules", "module_guidance", "guidance_by_module"])
+                    ?? (object(guidance) && !first(guidance, ["topics", "items"]) && !directGuidanceTopic ? guidance : null)
+                    ?? (directGuidanceModules ? guidance : null);
+                const guidanceModules = Array.isArray(guidanceModulesRaw) ? guidanceModulesRaw
+                    : object(guidanceModulesRaw) ? Object.entries(guidanceModulesRaw).map(([name, value]) => object(value) ? { module_name: name, ...value } : { module_name: name, topics: value }) : null;
+                if (guidanceModules) guidanceModules.forEach((module, index) => {
+                    if (!object(module)) return;
+                    const moduleBox = document.createElement("section"); moduleBox.className = "syllabus-summary-guidance-module";
+                    heading(moduleBox, "h5", first(module, ["module_name", "name", "title", "module"]) || `Module ${index + 1}`);
+                    const headingsRaw = first(module, ["sections", "headings", "topics_by_heading", "guidance_by_heading"]);
+                    const rawTopics = first(module, ["topics", "items", "topic_guidance"]);
+                    const topicGroups = Array.isArray(rawTopics) && rawTopics.some(item => object(item) && first(item, ["heading", "heading_name", "section_name"]) && Array.isArray(item.topics)) ? rawTopics : null;
+                    const headings = Array.isArray(headingsRaw) ? headingsRaw : object(headingsRaw)
+                        ? Object.entries(headingsRaw).map(([name, topics]) => ({ heading: name, topics })) : null;
+                    const groupedHeadings = headings || topicGroups;
+                    if (groupedHeadings) groupedHeadings.forEach(section => {
+                        if (!object(section)) return renderGuidanceTopic(section, moduleBox);
+                        const sectionBox = document.createElement("div");
+                        heading(sectionBox, "h6", first(section, ["heading", "heading_name", "section_heading", "section_name", "section_title", "name", "title"]) || "Heading");
+                        const topics = first(section, ["topics", "items", "topic_guidance"]);
+                        if (Array.isArray(topics)) topics.forEach(topic => renderGuidanceTopic(topic, sectionBox));
+                        moduleBox.append(sectionBox);
+                    });
+                    else {
+                        const topics = rawTopics;
+                        if (Array.isArray(topics)) topics.forEach(topic => renderGuidanceTopic(topic, moduleBox));
+                    }
+                    guidanceBody.append(moduleBox);
+                });
+                    else if (Array.isArray(guidance)) guidance.forEach(renderGuidanceTopic);
+                else if (object(guidance)) {
+                    const topics = first(guidance, ["topics", "items"]);
+                    if (Array.isArray(topics)) topics.forEach(topic => renderGuidanceTopic(topic, guidanceBody));
+                    else if (directGuidanceTopic) renderGuidanceTopic(guidance, guidanceBody);
+                }
+                details.append(guidanceBody); container.append(details);
+            }
+            if (container.childElementCount) return;
+        }
+
+        const fallback = String(record.summary_text || "").trim();
+        if (fallback) {
+            let section = null, currentList = null, fallbackList = null;
+            const headings = {"units and chapters":"Units and Chapters","topics and concepts":"Topics and Concepts","learning objectives":"Learning Objectives","marks distribution":"Available Syllabus Weightage","weightage":"Available Syllabus Weightage"};
+            const openSection = title => {
+                section = document.createElement("section"); heading(section, "h4", title); container.append(section); currentList = null;
+            };
+            fallback.split(/\r?\n/).forEach(raw => {
+                const line = raw.trim(); if (!line) return;
+                const normalized = headings[line.replace(/:$/, "").toLowerCase()];
+                const bullet = line.match(/^[-*•]\s+(.+)$/);
+                if (normalized) { openSection(normalized); return; }
+                if (/^module\s+[\wivx]+\s*[-–:]/i.test(line)) { openSection(line); return; }
+                if (bullet) {
+                    if (!currentList) {
+                        if (!fallbackList) { section = document.createElement("section"); heading(section, "h4", "Summary"); fallbackList = document.createElement("ul"); section.append(fallbackList); container.append(section); }
+                        currentList = fallbackList;
+                    }
+                    const item = document.createElement("li"); item.textContent = bullet[1]; currentList.append(item); return;
+                }
+                if (line.endsWith(":")) { openSection(line.slice(0, -1)); return; }
+                const paragraph = document.createElement("p"); paragraph.textContent = line;
+                (section || container).append(paragraph);
+                currentList = null;
+            });
+        }
+        if (!container.childElementCount) { const empty = document.createElement("p"); empty.textContent = "Syllabus summary is not available yet."; container.append(empty); }
+    }
+    async function downloadSyllabus(syllabusId,filename) {
+        const blob=await api(`/api/smart-qpg/syllabi/${encodeURIComponent(syllabusId)}/document`),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=filename||"syllabus.pdf";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+    document.getElementById("syllabusTableBody")?.addEventListener("click", async event => {
+        const summaryButton=event.target.closest("[data-syllabus-summary]"),downloadButton=event.target.closest("[data-syllabus-download]"),reprocessButton=event.target.closest("[data-syllabus-reprocess]"),deleteButton=event.target.closest("[data-syllabus-delete]");
+        const actionButton=summaryButton||downloadButton||reprocessButton||deleteButton;
+        const recordId=actionButton?.dataset.syllabusId;
+        const record=syllabusState.items.find(item=>String(item.syllabus_id??item.id)===String(recordId));
+        if(summaryButton){const dialog=document.getElementById("syllabusSummaryDialog"),body=document.getElementById("syllabusSummaryBody"),message=document.getElementById("syllabusSummaryMessage");message.textContent="";body.textContent="Preparing syllabus summary...";dialog?.showModal();try{const data=await api(`/api/smart-qpg/syllabi/${encodeURIComponent(recordId)}`,{cache:"no-store"});document.getElementById("syllabusSummaryTitle").textContent=data.syllabus_name||"Syllabus Summary";document.getElementById("syllabusSummarySubtitle").textContent=`${record?.subject||data.subject_name||"Subject"} · ${data.original_filename||record?.original_filename||""}${data.academic_year?` · ${data.academic_year}`:""}`;renderSyllabusSummary(body,data);}catch(error){body.textContent="";message.textContent=apiFailureMessage(error,"syllabus summary");}}
+        if(downloadButton){try{await downloadSyllabus(recordId,downloadButton.dataset.filename);showToast("Syllabus PDF downloaded.");}catch(error){showToast(error.message);}}
+        if(reprocessButton&&syllabusState.canUpload&&record&&String(recordId)===String(record.syllabus_id??record.id)&&!syllabusState.reprocessingIds.has(String(recordId))){
+            const status=String(record.status||record.processing_status||"").toLowerCase();
+            if(status!=="failed")return;
+            syllabusState.reprocessingIds.add(String(recordId));
+            const index=syllabusState.items.findIndex(item=>String(item.syllabus_id??item.id)===String(recordId));
+            renderSyllabusRows();
+            try{
+                await api(`/api/smart-qpg/syllabi/${encodeURIComponent(recordId)}/reprocess`,{method:"POST"});
+                if(index>=0){syllabusState.items[index]={...syllabusState.items[index],status:"processing",processing_status:"processing"};renderSyllabusRows();}
+                showToast("Syllabus reprocessing started.");
+                await loadSyllabusLibrary();
+            }catch(error){
+                const code=Number(error?.status);
+                if(code===409){
+                    if(index>=0){syllabusState.items[index]={...syllabusState.items[index],status:"processing",processing_status:"processing"};renderSyllabusRows();}
+                    showToast("This syllabus is already processing.");
+                    await loadSyllabusLibrary();
+                }else{
+                    if(index>=0){syllabusState.items[index]={...syllabusState.items[index],status:"failed",processing_status:"failed"};renderSyllabusRows();}
+                    showToast(code===403?"You are not authorised to reprocess this syllabus.":code===404?"Syllabus record not found.":error?.message||"Could not reprocess this syllabus.");
+                }
+            }finally{syllabusState.reprocessingIds.delete(String(recordId));renderSyllabusRows();}
+        }
+        if(deleteButton){const confirmed=await confirmAction("Delete syllabus","Delete this syllabus record and its uploaded document?","Delete");if(!confirmed)return;deleteButton.disabled=true;try{await api(`/api/smart-qpg/syllabi/${encodeURIComponent(recordId)}`,{method:"DELETE"});showToast("Syllabus deleted.");await loadSyllabusLibrary();}catch(error){showToast(error.message);}finally{deleteButton.disabled=false;}}
+    });
+    document.getElementById("aiAddSection")?.addEventListener("click", () => { addAiSection(); updateAiSummary(); });
+    document.getElementById("aiSectionsContainer")?.addEventListener("click", event => { if(event.target.closest("[data-remove-ai-section]")) { event.target.closest("[data-ai-section]")?.remove(); updateAiSummary(); } });
+    document.getElementById("aiGenerationForm")?.addEventListener("input", updateAiSummary);
+    document.getElementById("aiGenerationForm")?.addEventListener("change", async event => {
+        updateAiSummary();
+        if (event.target.id === "aiSubject") {
+            const subject = setAiSubject(event.target.value);
+            await loadAiSyllabuses(subject?.id || "", "");
+        }
+        if (event.target.id === "aiSyllabus") await loadAiSyllabusTopics(event.target.value);
+        if (event.target.id === "aiBlueprintSelect") {
+            const selected = blueprints.find(b => String(blueprintIdOf(b)) === String(event.target.value));
+            if (selected) { applyBlueprint(selected, "ai"); setBlueprintStatus(`Loaded "${selected.name || "blueprint"}".`, false); }
+        }
+    });
+    [["aiNewBlueprintButton", newBlueprint], ["aiDuplicateBlueprintButton", duplicateBlueprint], ["aiRenameBlueprintButton", renameBlueprint], ["aiDeleteBlueprintButton", deleteBlueprint], ["aiSaveBlueprintButton", saveBlueprint]].forEach(([id, handler]) => document.getElementById(id)?.addEventListener("click", handler));
+    document.getElementById("aiGenerationForm")?.addEventListener("submit", async event => {
+        event.preventDefault(); if(aiState.submitting)return;
+        const subject=setAiSubject(document.getElementById("aiSubject").value)?.id || "", syllabus=aiState.selectedSyllabusId, topics=selectedAiTopics(), sections=aiSections();
+        const selectedSyllabus = aiState.syllabi.find(record=>String(aiSyllabusRecordId(record))===String(syllabus));
+        const validSyllabus = selectedSyllabus && String(selectedSyllabus.subject_id ?? selectedSyllabus.subjectId ?? "") === String(subject)
+            && aiSyllabusStatus(selectedSyllabus) === "completed" && Boolean(aiState.syllabusDetails[String(syllabus)]?.valid);
+        if(!subject||!syllabus||!validSyllabus||!topics.length||!validateAiSections()){document.getElementById("aiMessage").textContent="Select a subject and a completed syllabus PDF with a valid structured summary, choose topics, and make sure section totals match Total Marks.";return;}
+        aiState.submitting=true; const button=document.getElementById("aiGenerateButton"); button.disabled=true;
+        const configuration = Object.fromEntries(Object.entries(AI_CONFIG_INPUT_IDS).map(([key, id]) => [key, document.getElementById(id)?.value || ""]));
+        const blueprint = blueprints.find(item => String(blueprintIdOf(item)) === String(currentBlueprintId));
+        const totalMarks = Number(configuration.total_marks);
+        const requestBody = { configuration_id: currentConfigId || null, university_name: configuration.university || null, college_name: configuration.college || null, department_name: configuration.department || null, paper_title: configuration.paper_title || null, academic_year: configuration.academic_year || null, semester: configuration.semester || null, exam_type: configuration.exam_type || null, subject: document.getElementById("aiSubject").selectedOptions[0]?.textContent || null, subject_id: subject, subject_code: configuration.subject_code || null, examination_date: configuration.exam_date || null, duration: configuration.duration || null, total_marks: Number.isInteger(totalMarks) && totalMarks > 0 ? totalMarks : null, instructions: configuration.instructions || "", syllabus_id: syllabus, examination_name: document.getElementById("aiExamName")?.value || null, blueprint_id: currentBlueprintId || null, blueprint_name: blueprint?.name || document.getElementById("aiBlueprintName")?.value || null, blueprint_description: blueprint?.description || document.getElementById("aiBlueprintDescription")?.value || null, question_generation_guidance: aiState.guidance, selected_topics: topics, selected_modules: selectedAiModules(), sections: sections.map(section => ({ name: section.name, question_count: section.count, marks_per_question: section.marks, question_type: section.type, difficulty: section.difficulty, instructions: section.instructions || "" })) };
+        try { const data=await api("/api/smart-qpg/generation-jobs",{method:"POST",body:requestBody}); aiState.jobId=data.job_id; if(!aiState.jobId)throw new Error("The backend did not return a generation job ID."); aiState.selectedItemIds.clear(); document.getElementById("aiProgressCard").classList.remove("hidden"); document.getElementById("aiJobSubject").textContent=document.getElementById("aiSubject").selectedOptions[0].textContent; document.getElementById("aiJobSyllabus").textContent=document.getElementById("aiSyllabus").selectedOptions[0].textContent; document.getElementById("aiGenerationForm").classList.add("hidden"); const url=new URL(window.location.href);url.searchParams.set("job",aiState.jobId);window.history.replaceState({pageId:"ai-generation"},"",url.pathname+url.search); await refreshAiJob(); clearInterval(aiState.poll); aiState.poll=aiJobIsTerminal() ? null : setInterval(refreshAiJob,4000); }
+        catch(error){ document.getElementById("aiMessage").textContent=error.message; aiState.submitting=false;button.disabled=false; }
+    });
+    function renderAiJob(job) {
+        const items = Array.isArray(job?.items) ? job.items : [];
+        aiState.questions = items;
+        const progress = job?.progress || {}, counts = progress.counts || {};
+        const status = String(job?.status || "unknown");
+        aiState.jobStatus = status;
+        document.getElementById("aiJobStatus").textContent = ({ queued: "Pending", running: "Processing", completed: "Completed", partial: "Partial", failed: "Failed", cancelled: "Cancelled", cancelling: "Cancelling" })[status] || status;
+        document.getElementById("aiStatTotal").textContent = String(progress.total ?? items.length);
+        document.getElementById("aiStatGenerated").textContent = String(progress.completed ?? ((counts.draft || 0) + (counts.approved || 0) + (counts.rejected || 0)));
+        document.getElementById("aiStatProcessing").textContent = String(counts.running || 0);
+        document.getElementById("aiStatFailed").textContent = String(counts.failed || 0);
+        document.getElementById("aiStatRetried").textContent = String(items.reduce((n, item) => n + Number(item.retries || 0), 0));
+        document.getElementById("aiProgressMessage").textContent = job?.error || "";
+        const approved = items.filter(item => item.status === "approved" && item.question);
+        document.getElementById("aiDocxPaperTitle").textContent = job?.request?.examination_name || job?.request?.paper_title || "Generated Question Paper";
+        document.getElementById("aiDocxSubject").textContent = job?.subject_name || job?.request?.subject || "";
+        document.getElementById("aiDocxQuestions").textContent = `${approved.length} approved question${approved.length === 1 ? "" : "s"}`;
+        document.getElementById("aiDocxMarks").textContent = `${approved.reduce((sum, item) => sum + Number(item.question.marks || 0), 0)} marks`;
+        document.getElementById("aiDocxCard").classList.toggle("hidden", !items.length);
+        document.getElementById("aiGenerateDocx").disabled = !approved.length || !["completed", "partial"].includes(status);
+        const host = document.getElementById("aiReviewContainer");
+        host.innerHTML = items.map((item, index) => {
+            const id = String(item.item_id || ""), q = item.question || {}, state = String(item.status || "queued");
+            const editable = state === "draft" || state === "approved";
+            return `<article class="content-card"><h4>${escapeHtml(q.section || "Questions")} · Question ${index + 1}</h4><p>${escapeHtml(q.question_text || item.error || (state === "queued" || state === "running" ? "Waiting for generation…" : "No question text available."))}</p><p>${escapeHtml(q.topic || "")} · ${escapeHtml(q.marks ?? "")} marks · ${escapeHtml(q.type || "")} · ${escapeHtml(q.difficulty || "")} · ${escapeHtml(state)}</p><label><input type="checkbox" data-select-question="${escapeHtml(id)}" ${aiState.selectedItemIds.has(id) ? "checked" : ""} ${state !== "draft" ? "disabled" : ""}> Select draft</label> <button type="button" data-edit-question="${escapeHtml(id)}" ${!editable ? "disabled" : ""}>Edit</button> <button type="button" data-reject-question="${escapeHtml(id)}" ${!editable ? "disabled" : ""}>Reject</button> <button type="button" data-regenerate-question="${escapeHtml(id)}" ${state === "running" || state === "queued" ? "disabled" : ""}>Regenerate</button> <button type="button" data-approve-question="${escapeHtml(id)}" ${state !== "draft" ? "disabled" : ""}>${state === "approved" ? "Approved" : "Approve"}</button></article>`;
+        }).join("");
+        const selectedDrafts = [...aiState.selectedItemIds].filter(id => items.some(item => item.item_id === id && item.status === "draft"));
+        aiState.selectedItemIds = new Set(selectedDrafts);
+        const bulk = document.getElementById("aiApproveSelected"); if (bulk) bulk.disabled = !selectedDrafts.length;
+        document.getElementById("aiReviewSelection").textContent = `${selectedDrafts.length} draft${selectedDrafts.length === 1 ? "" : "s"} selected`;
+        document.getElementById("aiReviewCard").classList.toggle("hidden", !items.length);
+        const terminal = ["completed", "partial", "failed", "cancelled"].includes(status);
+        if (terminal && aiState.poll) { clearInterval(aiState.poll); aiState.poll = null; }
+    }
+    async function refreshAiJob() {
+        if (!aiState.jobId) return;
+        try { const job = await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}`); renderAiJob(job); }
+        catch (error) { document.getElementById("aiProgressMessage").textContent = error.message; }
+    }
+    function aiJobIsTerminal() { return ["completed", "partial", "failed", "cancelled"].includes(aiState.jobStatus); }
+    async function loadAiQuestions() { await refreshAiJob(); }
+    async function loadExistingAiJob() { const id=new URLSearchParams(window.location.search).get("job"); if(!id)return; aiState.jobId=id; document.getElementById("aiProgressCard")?.classList.remove("hidden"); document.getElementById("aiGenerationForm")?.classList.add("hidden"); await refreshAiJob(); if (!aiJobIsTerminal() && !aiState.poll) aiState.poll=setInterval(refreshAiJob,4000); }
+    async function approveAiItems(ids) { if (!ids.length || !aiState.jobId) return; await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}/approve`, { method: "POST", body: { item_ids: ids } }); ids.forEach(id => aiState.selectedItemIds.delete(id)); await refreshAiJob(); }
+    document.getElementById("aiRefreshProgress")?.addEventListener("click",refreshAiJob); document.getElementById("aiViewQuestions")?.addEventListener("click",loadAiQuestions); document.getElementById("aiRefreshQuestions")?.addEventListener("click",loadAiQuestions);
+    document.getElementById("aiApproveSelected")?.addEventListener("click", async event => { event.currentTarget.disabled = true; try { await approveAiItems([...aiState.selectedItemIds]); } catch (error) { document.getElementById("aiReviewMessage").textContent = error.message; } });
+    document.getElementById("aiReviewContainer")?.addEventListener("change",event=>{const box=event.target.closest("[data-select-question]");if(!box)return; if(box.checked)aiState.selectedItemIds.add(box.dataset.selectQuestion);else aiState.selectedItemIds.delete(box.dataset.selectQuestion); document.getElementById("aiReviewSelection").textContent=`${aiState.selectedItemIds.size} draft${aiState.selectedItemIds.size===1?"":"s"} selected`; const bulk=document.getElementById("aiApproveSelected");if(bulk)bulk.disabled=!aiState.selectedItemIds.size;});
+    document.getElementById("aiReviewContainer")?.addEventListener("click",async event=>{const approve=event.target.closest("[data-approve-question]"),edit=event.target.closest("[data-edit-question]"),reject=event.target.closest("[data-reject-question]"),regen=event.target.closest("[data-regenerate-question]");try{if(approve){await approveAiItems([approve.dataset.approveQuestion]);}else if(edit){const item=aiState.questions.find(x=>String(x.item_id)===edit.dataset.editQuestion),q=item?.question||{};const replacement=window.prompt("Edit question text",q.question_text||"");if(replacement===null)return;if(!replacement.trim())throw new Error("Question text cannot be empty.");await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}/items/${encodeURIComponent(edit.dataset.editQuestion)}`,{method:"PATCH",body:{question:{...q,question_text:replacement.trim()}}});await refreshAiJob();}else if(reject){await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}/items/${encodeURIComponent(reject.dataset.rejectQuestion)}`,{method:"PATCH",body:{question:null}});aiState.selectedItemIds.delete(reject.dataset.rejectQuestion);await refreshAiJob();}else if(regen){regen.disabled=true;await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}/items/${encodeURIComponent(regen.dataset.regenerateQuestion)}/regenerate`,{method:"POST"});await refreshAiJob();}else return;}catch(error){document.getElementById("aiReviewMessage").textContent=error.message;}finally{if(regen)regen.disabled=false;}});
+    document.getElementById("aiGenerateDocx")?.addEventListener("click",async()=>{const button=document.getElementById("aiGenerateDocx");button.disabled=true;document.getElementById("aiDocxMessage").textContent="";try{document.getElementById("aiDocxStatus").textContent="Preparing download…";const blob=await api(`/api/smart-qpg/generation-jobs/${encodeURIComponent(aiState.jobId)}/docx`);if(!(blob instanceof Blob))throw new Error("The backend did not return a DOCX file.");const link=document.getElementById("aiDocxDownload");if(link.dataset.objectUrl)URL.revokeObjectURL(link.dataset.objectUrl);link.dataset.objectUrl=URL.createObjectURL(blob);link.href=link.dataset.objectUrl;link.download=`smart-qpg-${aiState.jobId}.docx`;link.classList.remove("hidden");document.getElementById("aiDocxStatus").textContent="Paper ready · editable DOCX downloaded from the backend";document.getElementById("aiDocxCard").classList.remove("hidden");const view=document.getElementById("aiViewMyPapers");view?.classList.remove("hidden");await fetchPapers();}catch(error){document.getElementById("aiDocxMessage").textContent=error.message;document.getElementById("aiDocxStatus").textContent="";}finally{button.disabled=!aiState.questions.some(item=>item.status==="approved"&&item.question)||! ["completed","partial"].includes(aiState.jobStatus);}});
+    if (new URLSearchParams(window.location.search).has("job")) loadExistingAiJob();
 
     // Wire backend selector (if present)
     (function wireBackendSelector() {

@@ -15,7 +15,7 @@
     <link rel="icon" href="../favicon.ico" sizes="any">
     <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 
-    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../style.css?v=syllabus-summary-modal-2">
     <link rel="stylesheet" href="../styles/glass.css">
 </head>
 
@@ -36,9 +36,12 @@
 <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
 <symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
 <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
 <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
 <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></symbol>
 <symbol id="icon-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5v6c0 1.7 2.7 3 6 3s6-1.3 6-3v-6"/></symbol>
+<symbol id="icon-syllabus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="9" x2="18" y2="9"/><line x1="9" y1="13" x2="18" y2="13"/><line x1="9" y1="17" x2="14" y2="17"/></symbol>
+<symbol id="icon-ai-generate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.2L12 16.4 5.7 20.8 8 13.6 2 9.2h7.6z"/><path d="M5 20l2-2"/><path d="M19 4l-2 2"/><path d="M12 14l2 2"/></symbol>
 </svg>
 
 
@@ -200,6 +203,12 @@
                     All Subjects
                 </a>
 
+                <a class="nav-item" href="/syllabus"
+                        data-page="syllabus-library">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-syllabus"/></svg>
+                    Syllabus Library
+                </a>
+
 
                 <a class="nav-item" href="/question-bank"
                         data-page="teacher-questions">
@@ -217,6 +226,12 @@
                         data-page="teacher-generate">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
                     Generate Question Paper
+                </a>
+
+                <a class="nav-item" href="/ai-generate"
+                        data-page="ai-generation">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-ai-generate"/></svg>
+                    Generate Questions with AI
                 </a>
 
                 <a class="nav-item" href="/my-papers"
@@ -263,6 +278,12 @@
                     Subjects
                 </a>
 
+                <a class="nav-item" href="/syllabus"
+                        data-page="syllabus-library">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-syllabus"/></svg>
+                    Syllabus Library
+                </a>
+
                 <a class="nav-item" href="/question-bank"
                         data-page="teacher-questions">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-question"/></svg>
@@ -279,6 +300,12 @@
                         data-page="admin-papers">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-papers"/></svg>
                     Question Papers
+                </a>
+
+                <a class="nav-item" href="/ai-generate"
+                        data-page="ai-generation">
+                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-ai-generate"/></svg>
+                    Generate Questions with AI
                 </a>
 
                 <a class="nav-item" href="/profile"
@@ -1128,6 +1155,7 @@
                                     <th>Marks</th>
                                     <th>Date</th>
                                     <th>Duration</th>
+                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -1135,7 +1163,7 @@
                             <tbody id="papersTableBody">
 
                                 <tr>
-                                    <td colspan="7" class="state-cell">
+                                    <td colspan="8" class="state-cell">
                                         Loading question papers…
                                     </td>
                                 </tr>
@@ -1427,7 +1455,7 @@
                                     <td colspan="5" class="state-cell">
                                         <div class="empty-state loading">
                                             <div class="spinner" aria-hidden="true"></div>
-                                            <p>Loading teachers…</p>
+                                            <p>Loading teacher records...</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -1484,6 +1512,7 @@
                                     <th>Marks</th>
                                     <th>Date</th>
                                     <th>Duration</th>
+                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -1491,7 +1520,7 @@
                             <tbody id="adminPapersTableBody">
 
                                 <tr>
-                                    <td colspan="7" class="state-cell">
+                                    <td colspan="8" class="state-cell">
                                         Loading question papers…
                                     </td>
                                 </tr>
@@ -1658,6 +1687,468 @@
                         </form>
                         <p class="form-message" data-totp-settings-message role="alert" aria-live="polite"></p>
                     </section>
+
+                </section>
+
+                <!-- =============================================
+                     SYLLABUS LIBRARY
+                ============================================== -->
+                <section
+                    id="syllabus-library"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+                        <div>
+                            <h1>Syllabus Library</h1>
+                            <p>View and manage subject-wise syllabi.</p>
+                        </div>
+                    </div>
+
+                    <section class="content-card syllabus-subject-section" aria-labelledby="syllabusSubjectHeading">
+                        <div class="syllabus-subject-toolbar">
+                            <div class="form-group syllabus-subject-picker">
+                                <label id="syllabusSubjectHeading" for="syllabusSubjectFilter">Subject</label>
+                                <select id="syllabusSubjectFilter">
+                                    <option value="">Loading subjects...</option>
+                                </select>
+                            </div>
+                            <div id="syllabusLibraryAdminActions" class="syllabus-heading-action">
+                        <button type="button" class="btn btn-primary" id="syllabusUploadButton" aria-describedby="syllabusUploadPermissionHint" title="Upload a syllabus PDF">
+                                    <svg class="btn-icon" aria-hidden="true"><use id="syllabusUploadIcon" href="#icon-upload"/></svg>
+                                    <span>+ Upload Syllabus PDF</span>
+                                </button>
+                                <span id="syllabusUploadPermissionHint" class="syllabus-permission-hint" hidden>Checking upload access…</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div id="syllabusProcessingNotice" class="syllabus-processing-notice hidden" role="status" aria-live="polite">
+                        <strong id="syllabusProcessingTitle">Syllabus summarisation</strong>
+                        <span id="syllabusProcessingBadge" class="syllabus-processing-badge">Pending</span>
+                        <p id="syllabusProcessingDescription">The saved summary will be available from View Summary when processing completes.</p>
+                    </div>
+
+                    <dialog id="syllabusUploadDialog" class="modal admin-dialog" aria-labelledby="syllabusUploadTitle">
+                        <div class="admin-dialog-shell">
+                            <div class="admin-dialog-header">
+                                <div><h3 id="syllabusUploadTitle">Upload Syllabus PDF</h3><p>Add a syllabus PDF to a subject.</p></div>
+                                <button type="button" class="btn btn-secondary small" id="syllabusCancelUpload">Cancel</button>
+                            </div>
+                            <form id="syllabusUploadForm" novalidate>
+                                <div class="admin-dialog-body">
+                                    <div id="syllabusUploadMessage" class="form-message" role="alert"></div>
+                                    <div class="form-group">
+                                        <label for="syllabusUploadSubject">Subject <span class="required">*</span></label>
+                                        <select id="syllabusUploadSubject" required><option value="">Loading subjects...</option></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="syllabusUploadFile">PDF file <span class="required">*</span></label>
+                                        <label class="syllabus-drop-area" id="syllabusDropArea" for="syllabusUploadFile">
+                                            <svg aria-hidden="true"><use href="#icon-upload"/></svg>
+                                            <strong>Drop your syllabus PDF here or Browse Files</strong>
+                                            <span>PDF only · up to 50 MB</span>
+                                        </label>
+                                        <input type="file" id="syllabusUploadFile" accept=".pdf,application/pdf" required class="syllabus-file-input">
+                                        <p id="syllabusUploadFileName" class="distribution-total">No file selected.</p>
+                                        <p id="syllabusUploadFileError" class="field-error" role="alert"></p>
+                                    </div>
+                                    <div class="form-group hidden" id="syllabusUploadProgressWrap" aria-live="polite">
+                                        <label for="syllabusUploadProgress">Upload progress</label>
+                                        <progress id="syllabusUploadProgress" max="100" value="0" style="width:100%"></progress>
+                                        <span id="syllabusUploadProgressLabel">0%</span>
+                                    </div>
+                                </div>
+                                <div class="modal-actions admin-dialog-footer">
+                                    <button type="button" class="btn btn-secondary" data-close="syllabusUploadDialog">Cancel</button>
+                                    <button type="submit" class="btn btn-primary" id="syllabusUploadSubmit" disabled>Upload PDF</button>
+                                </div>
+                            </form>
+                        </div>
+                    </dialog>
+
+                    <!-- Filter bar -->
+                    <div class="filter-bar" id="syllabusFilterBar">
+                        <select id="syllabusStatusFilter">
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="processing">Processing</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+
+                        <input
+                            type="search"
+                            id="syllabusSearch"
+                            placeholder="Search syllabi..."
+                            aria-label="Search syllabi">
+
+                    </div>
+
+                    <div id="syllabusMessage" class="form-message" role="alert"></div>
+
+                    <!-- Syllabi table -->
+                    <div class="content-card table-card">
+
+                        <table class="data-table syllabus-table">
+                            <colgroup>
+                                <col class="sl-col-document">
+                                <col class="sl-col-status">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Syllabus Document</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="syllabusTableBody">
+                                <tr>
+                                    <td colspan="2" class="state-cell">Loading syllabi...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                    </div>
+
+                    <div
+                        id="syllabusPagination"
+                        class="pagination-bar"
+                        style="display:none;">
+                        <button
+                            type="button"
+                            class="btn btn-secondary small"
+                            id="syllabusPrev">
+                            Previous
+                        </button>
+                        <span id="syllabusPageInfo">—</span>
+                        <button
+                            type="button"
+                            class="btn btn-secondary small"
+                            id="syllabusNext">
+                            Next
+                        </button>
+                    </div>
+
+                </section>
+
+                <!-- =============================================
+                     AI GENERATION
+                ============================================== -->
+                <section
+                    id="ai-generation"
+                    class="page-section hidden">
+
+                    <div class="section-header">
+
+                        <div>
+                            <h1>Generate Questions with AI</h1>
+                            <p>
+                                Create AI-generated questions from a syllabus,
+                                organized by section.
+                            </p>
+                        </div>
+
+                    </div>
+
+                    <div id="aiMessage" class="form-message" role="alert"></div>
+
+                    <!-- GENERATION FORM -->
+                    <form id="aiGenerationForm" novalidate>
+
+                        <div class="content-card">
+                            <div class="card-header"><div><h3>Basic Configuration</h3><p>Use the same saved examination configurations as Generate Question Paper.</p></div></div>
+                            <div class="config-manager">
+                                <div class="form-row">
+                                    <div class="form-group"><label for="aiConfigSelect">Saved configuration</label><select id="aiConfigSelect"><option value="">Loading saved configurations…</option></select></div>
+                                    <div class="form-group"><label for="aiConfigName">Configuration name</label><input id="aiConfigName" type="text" placeholder="Configuration name"></div>
+                                </div>
+                                <div class="section-actions">
+                                    <button type="button" class="btn btn-secondary small" id="aiNewConfigButton">New</button>
+                                    <button type="button" class="btn btn-primary small" id="aiSaveConfigButton">Save</button>
+                                    <button type="button" class="btn btn-secondary small" id="aiDuplicateConfigButton">Duplicate</button>
+                                    <button type="button" class="btn btn-secondary small" id="aiRenameConfigButton">Rename</button>
+                                    <button type="button" class="btn btn-secondary small" id="aiSetDefaultConfigButton">Set default</button>
+                                    <button type="button" class="btn btn-danger small" id="aiDeleteConfigButton">Delete</button>
+                                    <span id="aiConfigStatus" class="distribution-total"></span>
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group"><label for="aiUniversity">University / Institution</label><input id="aiUniversity" type="text"></div>
+                                <div class="form-group"><label for="aiCollege">College</label><input id="aiCollege" type="text"></div>
+                                <div class="form-group"><label for="aiDepartment">Department</label><input id="aiDepartment" type="text"></div>
+                                <div class="form-group"><label for="aiPaperTitle">Paper Title</label><input id="aiPaperTitle" type="text"></div>
+                                <div class="form-group"><label for="aiAcademicYear">Academic Year</label><input id="aiAcademicYear" type="text"></div>
+                                <div class="form-group"><label for="aiSemester">Semester</label><input id="aiSemester" type="text"></div>
+                                <div class="form-group"><label for="aiExamType">Examination Type</label><input id="aiExamType" type="text"></div>
+                                <div class="form-group"><label for="aiSubjectCode">Subject Code</label><input id="aiSubjectCode" type="text"></div>
+                                <div class="form-group"><label for="aiExamDate">Examination Date</label><input id="aiExamDate" type="date"></div>
+                                <div class="form-group"><label for="aiDuration">Duration</label><input id="aiDuration" type="text"></div>
+                                <div class="form-group"><label for="aiTotalMarks">Total Marks</label><input id="aiTotalMarks" type="number" min="1"></div>
+                                <div class="form-group form-group-full"><label for="aiInstructions">General Examination Instructions</label><textarea id="aiInstructions" rows="3"></textarea></div>
+                            </div>
+                        </div>
+
+                        <!-- 1. General Information -->
+                        <div class="content-card">
+
+                            <div class="card-header">
+                                <div>
+                                    <h3>1. General Information</h3>
+                                    <p>Choose a subject and its uploaded syllabus PDF before selecting topics.</p>
+                                </div>
+                            </div>
+
+                            <div class="form-grid ai-general-selection-grid">
+
+                                <div class="form-group">
+                                    <label for="aiSubject">Subject Name <span class="required">*</span></label>
+                                    <select id="aiSubject" required>
+                                        <option value="">Select subject</option>
+                                    </select>
+                                    <span class="field-error" id="aiSubjectError"></span>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="aiSyllabus">Syllabus PDF <span class="required">*</span></label>
+                                    <select id="aiSyllabus" required>
+                                        <option value="">Select a subject first</option>
+                                    </select>
+                                    <span class="field-error" id="aiSyllabusError"></span>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="aiExamName">Examination Name (optional)</label>
+                                    <input type="text" id="aiExamName" placeholder="e.g. Mid-Semester Examination">
+                                </div>
+
+                                <div class="form-group form-group-full">
+                                    <label for="aiTopics">Topics by module <span class="required">*</span></label>
+                                    <div id="aiTopicsContainer">
+                                        <p style="padding:8px 0; color:var(--muted);">Select a syllabus to load topics.</p>
+                                    </div>
+                                    <span class="field-error" id="aiTopicsError"></span>
+                                </div>
+
+                                <div class="form-group form-group-full">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary small"
+                                        id="aiSelectAllTopics">
+                                        Select All Modules
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary small"
+                                        id="aiSelectNoneTopics">
+                                        Deselect All Modules
+                                    </button>
+                                    <span id="aiTopicsCount" class="distribution-total">0 topics selected</span>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                        <!-- 2. Question Paper Configuration -->
+                        <div class="content-card">
+
+                            <div class="card-header">
+                                <div>
+                                    <h3>2. Question Paper Configuration</h3>
+                                    <p>
+                                        Add one or more sections with different
+                                        questions, marks and difficulty.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group"><label for="aiBlueprintSelect">Blueprint</label><select id="aiBlueprintSelect"><option value="">No saved blueprints</option></select></div>
+                                <div class="form-group"><label for="aiBlueprintName">Blueprint name</label><input id="aiBlueprintName" type="text" placeholder="Blueprint name"></div>
+                            </div>
+                            <div class="form-group"><label for="aiBlueprintDescription">Description</label><input id="aiBlueprintDescription" type="text" placeholder="Optional description"></div>
+                            <div class="section-actions">
+                                <button type="button" class="btn btn-secondary small" id="aiNewBlueprintButton">New</button>
+                                <button type="button" class="btn btn-secondary small" id="aiDuplicateBlueprintButton">Duplicate</button>
+                                <button type="button" class="btn btn-secondary small" id="aiRenameBlueprintButton">Rename</button>
+                                <button type="button" class="btn btn-danger small" id="aiDeleteBlueprintButton">Delete</button>
+                                <button type="button" class="btn btn-primary small" id="aiSaveBlueprintButton">Save</button>
+                                <span id="aiBlueprintStatus" class="distribution-total"></span>
+                            </div>
+                            <div id="aiSectionsContainer"></div>
+
+                            <div class="section-actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-secondary small"
+                                    id="aiAddSection">
+                                    + Add Section
+                                </button>
+                                <span id="aiSectionTotalMessage" class="distribution-total"></span>
+                            </div>
+
+                        </div>
+
+                        <!-- 3. Generation Summary -->
+                        <div class="generation-summary ai-generation-summary content-card">
+
+                            <div class="ai-generation-summary-top">
+                                <span>GENERATION SUMMARY</span>
+                                <h3 id="aiSummaryTitle">Question Paper</h3>
+                                <p id="aiSummaryDetails">Configure the form to generate.</p>
+                            </div>
+
+                            <div class="ai-generation-summary-bottom">
+                                <div id="aiSummaryStats" class="summary-stats"></div>
+                                <button
+                                    type="submit"
+                                    class="btn btn-primary btn-large"
+                                    id="aiGenerateButton">
+                                Generate Question Paper
+                                </button>
+                            </div>
+
+                        </div>
+
+                    </form>
+
+                    <!-- GENERATION PROGRESS -->
+                    <div
+                        id="aiProgressCard"
+                        class="content-card hidden">
+
+                        <div class="card-header">
+                            <div>
+                                <h3>Generation Progress</h3>
+                                <p>Track the AI question generation job.</p>
+                            </div>
+                        </div>
+
+                        <div id="aiProgressMessage" class="form-message" role="alert"></div>
+
+                        <div class="form-grid">
+                            <div class="form-group form-group-full">
+                                <strong>Job:</strong>
+                                <span id="aiJobSubject"></span>
+                                <span id="aiJobSyllabus"></span>
+                            </div>
+                        </div>
+
+                        <div class="summary-stats">
+                            <div class="stat-card">
+                                <div>Total Requested</div>
+                                <strong id="aiStatTotal">0</strong>
+                            </div>
+                            <div class="stat-card">
+                                <div>Generated</div>
+                                <strong id="aiStatGenerated">0</strong>
+                            </div>
+                            <div class="stat-card">
+                                <div>Processing</div>
+                                <strong id="aiStatProcessing">0</strong>
+                            </div>
+                            <div class="stat-card">
+                                <div>Failed</div>
+                                <strong id="aiStatFailed">0</strong>
+                            </div>
+                            <div class="stat-card">
+                                <div>Retried</div>
+                                <strong id="aiStatRetried">0</strong>
+                            </div>
+                        </div>
+
+                        <div class="job-status">
+                            <span id="aiJobStatusLabel">Status:</span>
+                            <span id="aiJobStatus">—</span>
+                        </div>
+
+                        <div class="section-actions">
+                            <button
+                                type="button"
+                                class="btn btn-secondary small"
+                                id="aiRefreshProgress">
+                                Refresh
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-primary small"
+                                id="aiViewQuestions">
+                                View Questions
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <!-- GENERATED QUESTION REVIEW -->
+                    <div
+                        id="aiReviewCard"
+                        class="content-card hidden">
+
+                        <div class="card-header">
+                            <div>
+                                <h3>Review Generated Questions</h3>
+                                <p>
+                                    Review, edit and approve questions before
+                                    generating the paper.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div id="aiReviewMessage" class="form-message" role="alert"></div>
+
+                        <div id="aiReviewContainer"></div>
+
+                        <div class="section-actions">
+                            <button
+                                type="button"
+                                class="btn btn-secondary small"
+                                id="aiRefreshQuestions">
+                                Refresh
+                            </button>
+                            <button type="button" class="btn btn-primary small" id="aiApproveSelected" disabled>Approve Selected Drafts</button>
+                            <span id="aiReviewSelection" class="distribution-total">0 questions selected</span>
+                        </div>
+
+                    </div>
+
+                    <!-- DOCX OUTPUT -->
+                    <div
+                        id="aiDocxCard"
+                        class="content-card hidden">
+
+                        <div class="card-header">
+                            <div>
+                                <h3>Generate Question Paper (DOCX)</h3>
+                                <p>Export all approved questions from this generation job to a DOCX question paper.</p>
+                            </div>
+                        </div>
+
+                        <div id="aiDocxMessage" class="form-message" role="alert"></div>
+
+                        <div class="docx-meta">
+                            <strong id="aiDocxPaperTitle">—</strong>
+                            <span id="aiDocxSubject">—</span>
+                            <span id="aiDocxQuestions">0 questions</span>
+                            <span id="aiDocxMarks">0 marks</span>
+                        </div>
+
+                        <div class="section-actions">
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                id="aiGenerateDocx">
+                                Generate Question Paper
+                            </button>
+                            <a
+                                id="aiDocxDownload"
+                                class="btn btn-secondary small hidden"
+                                download>
+                                Download DOCX
+                            </a>
+                            <button type="button" id="aiViewMyPapers" class="btn btn-secondary small hidden" data-go="teacher-papers">View in My Papers</button>
+                            <span id="aiDocxStatus" class="distribution-total"></span>
+                        </div>
+
+                    </div>
 
                 </section>
 
@@ -1878,6 +2369,14 @@
                     <span class="field-error" id="teacherEmailError"></span>
                 </div>
                 <div class="form-group">
+                    <label for="teacherRole">Role</label>
+                    <select id="teacherRole" required>
+                        <option value="teacher" selected>Teacher</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <span class="field-error" id="teacherRoleError"></span>
+                </div>
+                <div class="form-group">
                     <label for="teacherPassword">Password <small>(leave blank to keep unchanged)</small></label>
                     <input type="password" id="teacherPassword" autocomplete="new-password" minlength="8" placeholder="••••••••">
                     <span class="field-error" id="teacherPasswordError"></span>
@@ -2021,6 +2520,21 @@
                 </div>
             </div>
         </form>
+    </div>
+</dialog>
+
+<!-- SYLLABUS SUMMARY DIALOG -->
+<dialog id="syllabusSummaryDialog" class="modal syllabus-summary-dialog" aria-labelledby="syllabusSummaryTitle">
+    <div class="modal-card">
+        <div class="card-header">
+            <div>
+                <h3 id="syllabusSummaryTitle">Syllabus Summary</h3>
+                <p id="syllabusSummarySubtitle">Subject and syllabus details.</p>
+            </div>
+            <button type="button" class="btn btn-secondary small" data-close="syllabusSummaryDialog">Close</button>
+        </div>
+        <div id="syllabusSummaryMessage" class="form-message" role="alert"></div>
+        <div id="syllabusSummaryBody" class="syllabus-summary-content"><p style="color:var(--muted);">Select Summary to view syllabus details.</p></div>
     </div>
 </dialog>
 

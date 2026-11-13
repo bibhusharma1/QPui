@@ -864,3 +864,139 @@ dialog.modal.admin-dialog::backdrop {
     flex: 1 1 100%;
   }
 }
+
+/* Syllabus Library heading and upload modal controls */
+#syllabus-library > .section-header {
+  align-items: center;
+  flex-wrap: wrap;
+}
+#syllabus-library .section-header > div:first-child { flex: 1 1 320px; }
+#syllabus-library .syllabus-subject-section { margin-block: 18px; }
+#syllabus-library .syllabus-subject-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 20px;
+}
+#syllabus-library .syllabus-subject-picker { margin: 0; }
+#syllabus-library .syllabus-subject-picker select { width: 100%; }
+#syllabus-library .syllabus-file-meta {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+#syllabus-library .syllabus-processing-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 0 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--glass-elevated);
+}
+#syllabus-library .syllabus-processing-notice strong { overflow-wrap: anywhere; }
+#syllabus-library .syllabus-processing-notice p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+#syllabus-library .syllabus-processing-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(107, 143, 203, .12);
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+#syllabus-library .syllabus-processing-badge[data-status="completed"] {
+  background: rgba(35, 145, 100, .12);
+  color: #18794e;
+}
+#syllabus-library .syllabus-processing-badge[data-status="failed"] {
+  background: rgba(200, 55, 65, .12);
+  color: #b42332;
+}
+#syllabus-library .syllabus-processing-badge[data-status="processing"] {
+  background: rgba(198, 125, 22, .13);
+  color: #925b0a;
+}
+#syllabus-library .section-actions button:disabled { opacity: .62; cursor: not-allowed; }
+#syllabus-library .syllabus-heading-action {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+#syllabus-library #syllabusUploadButton {
+  min-height: 46px;
+  padding: 11px 20px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 7px 18px rgba(75, 96, 190, .2);
+}
+#syllabus-library #syllabusUploadButton:not(:disabled):hover {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+}
+#syllabus-library #syllabusUploadButton:focus-visible {
+  outline: 3px solid rgba(93, 109, 219, .35);
+  outline-offset: 3px;
+}
+#syllabus-library #syllabusUploadButton:disabled {
+  opacity: .76;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+#syllabus-library .syllabus-permission-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+#syllabus-library .syllabus-permission-hint[hidden] { display: none; }
+#syllabusUploadDialog .syllabus-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+#syllabusUploadDialog .syllabus-drop-area {
+  display: flex;
+  min-height: 138px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: rgba(107, 143, 203, .06);
+  color: var(--text);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+}
+#syllabusUploadDialog .syllabus-drop-area svg { width: 26px; height: 26px; color: var(--primary); }
+#syllabusUploadDialog .syllabus-drop-area span { color: var(--muted); font-size: 12px; }
+#syllabusUploadDialog .syllabus-drop-area:focus-within,
+#syllabusUploadDialog .syllabus-drop-area.is-dragover {
+  border-color: var(--primary);
+  background: rgba(107, 143, 203, .12);
+  box-shadow: var(--ring);
+}
+@media (max-width: 760px) {
+  #syllabus-library > .section-header { align-items: stretch; }
+  #syllabus-library .syllabus-subject-toolbar { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  #syllabus-library .syllabus-heading-action { align-items: stretch; width: 100%; }
+  #syllabus-library #syllabusUploadButton { width: 100%; justify-content: center; }
+  #syllabus-library .syllabus-permission-hint { text-align: right; }
+}

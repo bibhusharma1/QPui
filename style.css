@@ -1878,6 +1878,237 @@ td.actions-cell {
     font-size: 13px;
 }
 
+/* AI generation summary: metadata above, compact metrics and action below. */
+.ai-generation-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+}
+
+.ai-generation-summary-bottom {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    min-width: 0;
+}
+
+.ai-generation-summary #aiSummaryStats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex: 1 1 auto;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ai-generation-summary #aiSummaryStats .stat-card {
+    justify-content: space-between;
+    min-width: 0;
+    padding: 12px 14px;
+}
+
+.ai-generation-summary #aiGenerateButton {
+    flex: 0 0 auto;
+    align-self: center;
+    width: auto;
+    white-space: nowrap;
+}
+
+/* Structured topic picker for the AI generation form. */
+#aiTopicsContainer {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.ai-general-selection-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 820px) {
+    .ai-general-selection-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+#aiTopicsCount {
+    display: block;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+}
+
+.ai-topics-empty {
+    margin: 0;
+    padding: 8px 0;
+    color: var(--muted);
+}
+
+.ai-module-card {
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface, #fff);
+}
+
+.ai-module-header,
+.ai-module-select {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+}
+
+.ai-module-header {
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-module-select {
+    gap: 10px;
+    cursor: pointer;
+}
+
+.ai-module-select input,
+.ai-topic-row input {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--primary);
+}
+
+.ai-module-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+}
+
+.ai-module-meta {
+    margin: 4px 0 0 26px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.ai-module-content {
+    margin-top: 14px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+}
+
+.ai-topic-section + .ai-topic-section {
+    margin-top: 16px;
+}
+
+.ai-topic-section h5 {
+    margin: 10px 0 6px;
+    color: var(--text, #27304a);
+    font-size: 13px;
+}
+
+.ai-topic-list {
+    display: grid;
+    gap: 3px;
+}
+
+.ai-topic-row {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 14px;
+    padding: 5px 2px;
+}
+
+.ai-topic-row > label {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 9px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ai-topic-row > label span {
+    overflow-wrap: anywhere;
+}
+
+.ai-topic-guidance {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.ai-topic-guidance summary {
+    cursor: pointer;
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.ai-topic-guidance-body {
+    max-width: min(420px, 70vw);
+    margin-top: 7px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--background, #f8f9fc);
+}
+
+.ai-topic-guidance-body p {
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
+}
+
+.ai-topic-guidance-body p:last-child {
+    margin-bottom: 0;
+}
+
+.ai-module-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+@media (max-width: 560px) {
+    .ai-module-card {
+        padding: 12px;
+    }
+
+    .ai-topic-row {
+        flex-wrap: wrap;
+    }
+
+    .ai-topic-guidance {
+        margin-left: 25px;
+    }
+
+    .ai-topic-guidance-body {
+        max-width: calc(96vw - 64px);
+    }
+}
+
+@media (max-width: 820px) {
+    .ai-generation-summary-bottom {
+        flex-wrap: wrap;
+    }
+
+    .ai-generation-summary #aiSummaryStats {
+        flex: 1 1 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .ai-generation-summary #aiSummaryStats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ai-generation-summary #aiGenerateButton {
+        width: 100%;
+    }
+}
+
 /* ---------- Generated paper preview ---------- */
 
 .success-header {
@@ -2303,6 +2534,270 @@ td.actions-cell {
 
     .distribution-item label {
         flex-basis: 64px;
+    }
+}
+
+/* Syllabus summary: one wide dialog with a fixed header and a single scroll area. */
+dialog#syllabusSummaryDialog {
+    width: min(900px, calc(100vw - 48px));
+    max-width: 900px;
+    min-width: 0;
+    min-height: min(560px, 88vh);
+    max-height: 88vh;
+    max-height: min(88vh, 88dvh);
+    padding: 0;
+    overflow: hidden;
+}
+
+dialog#syllabusSummaryDialog[open] {
+    align-items: stretch;
+}
+
+#syllabusSummaryDialog > .modal-card {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+    padding: 24px clamp(20px, 3vw, 32px);
+    background: transparent;
+    border: 0;
+    border-radius: inherit;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+#syllabusSummaryDialog .card-header {
+    flex: 0 0 auto;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+#syllabusSummaryDialog .card-header > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+#syllabusSummaryDialog .card-header .btn {
+    flex: 0 0 auto;
+}
+
+#syllabusSummaryMessage {
+    flex: 0 0 auto;
+}
+
+#syllabusSummaryBody {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 18px 8px 12px 0;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+}
+
+#syllabusSummaryBody section {
+    min-width: 0;
+    margin: 0 0 20px;
+}
+
+#syllabusSummaryBody h4 {
+    margin: 0 0 8px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+#syllabusSummaryBody p {
+    margin: 0 0 10px;
+}
+
+#syllabusSummaryBody ul {
+    margin: 0;
+    padding-inline-start: 1.5rem;
+}
+
+#syllabusSummaryBody li {
+    min-width: 0;
+    margin: 0 0 7px;
+    overflow-wrap: anywhere;
+}
+
+#syllabusSummaryBody li > div {
+    min-width: 0;
+    margin-top: 7px;
+    padding-inline-start: 0.65rem;
+    border-inline-start: 2px solid rgba(124, 116, 232, 0.18);
+}
+
+#syllabusSummaryBody .syllabus-summary-subject-title {
+    margin: 0 0 20px;
+    font-size: 21px;
+    line-height: 1.35;
+}
+
+#syllabusSummaryBody .syllabus-summary-module {
+    padding: 16px 18px 5px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    background: rgba(248, 249, 255, 0.62);
+}
+
+#syllabusSummaryBody .syllabus-summary-module > h4 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 14px;
+    font-size: 17px;
+}
+
+#syllabusSummaryBody .syllabus-summary-hours {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#syllabusSummaryBody .syllabus-summary-section-heading {
+    margin: 14px 0 5px;
+    font-size: 14px;
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance {
+    margin: 10px 0 18px;
+    padding: 14px 18px;
+    border: 1px solid rgba(124, 116, 232, 0.28);
+    border-radius: 12px;
+    background: rgba(124, 116, 232, 0.06);
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance > summary {
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance-body {
+    padding-top: 12px;
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance-module {
+    margin: 12px 0 18px;
+    padding: 12px 14px 2px;
+    border-inline-start: 3px solid rgba(124, 116, 232, 0.35);
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance-module h5,
+#syllabusSummaryBody .syllabus-summary-guidance-module h6 {
+    margin: 0 0 9px;
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance-topic {
+    margin: 0 0 12px;
+    padding: 10px 12px 2px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+#syllabusSummaryBody .syllabus-summary-guidance-topic h6 {
+    font-size: 13px;
+}
+
+#syllabus-library .syllabus-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
+#syllabus-library .syllabus-table th:nth-child(1),
+#syllabus-library .syllabus-table td:nth-child(1) { width: 78%; }
+#syllabus-library .syllabus-table th:nth-child(2),
+#syllabus-library .syllabus-table td:nth-child(2) { width: 22%; }
+
+#syllabus-library .syllabus-record-row td {
+    vertical-align: top;
+    border-bottom: 0;
+}
+
+#syllabus-library .syllabus-filename {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+#syllabus-library .syllabus-file-meta {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#syllabus-library .syllabus-actions-row td {
+    padding-top: 8px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(124, 116, 232, 0.035);
+}
+
+#syllabus-library .syllabus-row-actions {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#syllabus-library .status.completed {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+@media (max-width: 768px) {
+    #syllabus-library .syllabus-table th,
+    #syllabus-library .syllabus-table td {
+        padding: 10px 8px;
+    }
+
+    #syllabus-library .syllabus-row-actions {
+        gap: 7px;
+    }
+}
+
+@media (max-width: 1023px) {
+    dialog#syllabusSummaryDialog {
+        width: 90vw;
+    }
+}
+
+@media (max-width: 640px) {
+    dialog#syllabusSummaryDialog {
+        width: 96vw;
+        min-height: min(500px, 88vh);
+        max-height: 88vh;
+        max-height: min(88vh, 88dvh);
+    }
+
+    #syllabusSummaryDialog > .modal-card {
+        padding: 18px 16px;
+    }
+
+    #syllabusSummaryDialog .card-header {
+        gap: 10px;
+    }
+
+    #syllabusSummaryDialog .card-header .btn {
+        padding-inline: 10px;
     }
 }
 

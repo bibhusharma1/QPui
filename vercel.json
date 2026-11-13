@@ -11,6 +11,7 @@
     { "source": "/help", "destination": "/index.html" },
     { "source": "/activity", "destination": "/index.html" },
     { "source": "/settings", "destination": "/index.html" },
+    { "source": "/syllabus", "destination": "/index.html" },
     { "source": "/login", "destination": "/index.html" }
   ]
 }
