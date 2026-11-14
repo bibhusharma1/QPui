@@ -587,7 +587,7 @@ document.addEventListener("DOMContentLoaded", function () {
        These views use the authenticated backend API; permissions are enforced
        by the API and the UI only reflects the capabilities it returns. */
     const syllabusState = { items: [], subjects: [], subjectsLoaded: false, selectedSubjectId: "", canUpload: false, permissionReady: false, subjectsLoading: false, subjectsError: null, uploading: false, activeUpload: null, statusPoll: null, replaceExisting: false, replacingRecord: null, recentUpload: null, listRequest: 0, reprocessingIds: new Set() };
-    const aiState = { subjects: [], syllabi: [], syllabusSubjectId: "", selectedSyllabusId: "", modules: [], selectedSubjectId: "", selectedSubjectName: "", jobId: null, jobStatus: "", poll: null, submitting: false, retryingFailedCount: 0, retrySubmitting: false, retryPending: false, lastJobUpdatedAt: null, retryStartedAt: null, docxUrl: null, docxBlob: null, docxReady: false, docxPreparing: false, docxAttempted: false, docxError: "", docxPollUntil: 0 };
+    const aiState = { subjects: [], syllabi: [], syllabusSubjectId: "", selectedSyllabusId: "", modules: [], selectedSubjectId: "", selectedSubjectName: "", jobId: null, jobStatus: "", poll: null, submitting: false, retryingFailedCount: 0, retrySubmitting: false, retryPending: false, lastJobUpdatedAt: null, retryStartedAt: null, docxUrl: null, docxBlob: null, docxReady: false, docxPreparing: false, docxAttempted: false, docxError: "", docxPollUntil: 0, previousDocx: [] };
     const asArray = value => Array.isArray(value) ? value : (value?.items || value?.results || value?.data || []);
     const text = value => String(value ?? "");
     function apiFailureMessage(error, resource) {
@@ -7673,14 +7673,6 @@ document.addEventListener("DOMContentLoaded", function () {
         else if (!validateAiSections(false)) issues.push("Set valid section question counts and marks that total the configured paper marks.");
         if (issues.length) { document.getElementById("aiMessage").textContent=issues.join(" "); updateAiSummary(); return; }
         document.getElementById("aiMessage").textContent = "";
-        aiState.docxUrl = null;
-        aiState.docxBlob = null;
-        aiState.docxReady = false;
-        aiState.docxPreparing = false;
-        aiState.docxAttempted = false;
-        aiState.docxError = "";
-        aiState.docxPollUntil = 0;
-        updateAiDocxUI();
         aiState.submitting=true; const button=document.getElementById("aiGenerateButton"); button.disabled=true;
         const configuration = Object.fromEntries(Object.entries(AI_CONFIG_INPUT_IDS).map(([key, id]) => [key, document.getElementById(id)?.value || ""]));
         const blueprint = blueprints.find(item => String(blueprintIdOf(item)) === String(currentBlueprintId));
@@ -7719,8 +7711,27 @@ document.addEventListener("DOMContentLoaded", function () {
         };
         try {
             const data = await api("/api/smart-qpg/generation-jobs", { method: "POST", body: requestBody });
+            if (!data?.job_id) throw new Error("The backend did not return a generation job ID.");
+            if (aiState.previousDocx.some(item => String(item.jobId) === String(data.job_id))) {
+                throw new Error("The backend returned a job ID that was already used for a previous question paper.");
+            }
+            if (aiState.poll) clearInterval(aiState.poll);
+            aiState.poll = null;
             aiState.jobId = data.job_id;
-            if (!aiState.jobId) throw new Error("The backend did not return a generation job ID.");
+            aiState.jobStatus = "";
+            aiState.lastJobUpdatedAt = null;
+            aiState.retryStartedAt = null;
+            aiState.retryPending = false;
+            aiState.retryingFailedCount = 0;
+            aiState.docxUrl = null;
+            aiState.docxBlob = null;
+            aiState.docxReady = false;
+            aiState.docxPreparing = false;
+            aiState.docxAttempted = false;
+            aiState.docxError = "";
+            aiState.docxPollUntil = 0;
+            resetAiProgressUI();
+            updateAiDocxUI();
             aiState.submitting = false;
             document.getElementById("aiProgressCard").classList.remove("hidden");
             document.getElementById("aiGenerationForm").classList.add("hidden");
@@ -7750,7 +7761,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const message = document.getElementById("aiDocxMessage");
         const download = document.getElementById("aiDownloadDocx");
         const retry = document.getElementById("aiRetryDocx");
-        const showCard = aiState.docxPreparing || aiState.docxReady || Boolean(aiState.docxError);
+        const showCard = aiState.docxPreparing || aiState.docxReady || Boolean(aiState.docxError) || aiState.previousDocx.length > 0;
         card?.classList.toggle("hidden", !showCard);
         if (status) {
             status.textContent = aiState.docxReady
@@ -7763,9 +7774,81 @@ document.addEventListener("DOMContentLoaded", function () {
             message.classList.toggle("hidden", !aiState.docxError);
         }
         download?.classList.toggle("hidden", !aiState.docxReady);
+        document.getElementById("aiGenerateMore")?.classList.toggle("hidden", !aiState.docxReady);
         retry?.classList.toggle("hidden", !aiState.docxError || aiState.docxPreparing);
         if (retry) retry.disabled = aiState.docxPreparing;
+        renderPreviousAiDocxDownloads();
     }
+
+    function renderPreviousAiDocxDownloads() {
+        const host = document.getElementById("aiPreviousDocxDownloads");
+        if (!host) return;
+        host.replaceChildren();
+        host.classList.toggle("hidden", !aiState.previousDocx.length);
+        aiState.previousDocx.forEach((item, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "btn btn-secondary small";
+            button.dataset.previousDocxIndex = String(index);
+            button.textContent = `Download previous question paper ${index + 1} (.docx)`;
+            host.append(button);
+        });
+    }
+
+    function resetAiProgressUI() {
+        document.getElementById("aiProgressStatus").textContent = "Submitting your request…";
+        document.getElementById("aiProgressMessage").textContent = "";
+        document.getElementById("aiProgressMessage").classList.remove("form-message-error");
+        document.getElementById("aiProgressBar").style.width = "0%";
+        document.querySelector("#aiProgressCard [role=progressbar]")?.setAttribute("aria-valuenow", "0");
+        document.getElementById("aiProgressPercent").textContent = "0%";
+        document.getElementById("aiProgressCompleted").textContent = "0 of 0 questions completed";
+        document.getElementById("aiProgressCounts").textContent = "";
+        ["aiProgressRetryStatus", "aiProgressRetryAttempts", "aiProgressFailures", "aiRetryFailedButton"].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) { element.textContent = ""; element.classList.add("hidden"); }
+        });
+        document.getElementById("aiProgressCard")?.classList.add("hidden");
+    }
+
+    document.getElementById("aiGenerateMore")?.addEventListener("click", () => {
+        if (!aiState.jobId || !aiState.docxReady) return;
+        aiState.previousDocx.push({ jobId: aiState.jobId, url: aiState.docxUrl || aiJobDocxPath() });
+        aiState.docxUrl = null;
+        aiState.docxBlob = null;
+        aiState.docxReady = false;
+        aiState.docxAttempted = false;
+        aiState.docxError = "";
+        document.getElementById("aiGenerationForm")?.classList.remove("hidden");
+        document.getElementById("aiProgressCard")?.classList.add("hidden");
+        const url = new URL(window.location.href);
+        url.searchParams.delete("job");
+        window.history.replaceState({ pageId: "ai-generation" }, "", url.pathname + url.search);
+        updateAiDocxUI();
+        updateAiSummary();
+        document.getElementById("aiGenerationForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    document.getElementById("aiPreviousDocxDownloads")?.addEventListener("click", async event => {
+        const button = event.target.closest("[data-previous-docx-index]");
+        if (!button) return;
+        const item = aiState.previousDocx[Number(button.dataset.previousDocxIndex)];
+        if (!item) return;
+        button.disabled = true;
+        try {
+            const blob = await validateAiDocx(await api(item.url));
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `${String(item.jobId || "question-paper").replace(/[^a-z0-9_-]/gi, "-")}.docx`;
+            document.body.append(anchor);
+            anchor.click();
+            anchor.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            showToast(`DOCX download failed: ${error.message || "The document could not be downloaded."}`);
+        } finally { button.disabled = false; }
+    });
 
     async function validateAiDocx(blob) {
         if (!(blob instanceof Blob) || blob.size < 4) {

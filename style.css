@@ -2044,9 +2044,12 @@ dialog.ai-module-dialog[open] { align-items: stretch; }
 .ai-progress-failures, .ai-progress-card .form-message-error { color: var(--danger); }
 .ai-docx-card { max-width: 900px; margin-top: 16px; }
 .ai-docx-card #aiDownloadDocx { min-height: 48px; }
+.ai-docx-card #aiGenerateMore { min-height: 48px; margin-left: 10px; }
+.ai-previous-docx-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 @media (max-width: 560px) {
     .ai-progress-numbers { align-items: flex-start; flex-direction: column; }
-    .ai-docx-card #aiDownloadDocx { width: 100%; }
+    .ai-docx-card #aiDownloadDocx, .ai-docx-card #aiGenerateMore { width: 100%; margin-left: 0; }
+    .ai-previous-docx-downloads { flex-direction: column; }
 }
 
 /* ---------- Generated paper preview ---------- */
