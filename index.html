@@ -15,7 +15,7 @@
     <link rel="icon" href="../favicon.ico" sizes="any">
     <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 
-    <link rel="stylesheet" href="../style.css?v=syllabus-summary-modal-2">
+    <link rel="stylesheet" href="../style.css?v=generation-contract-20261114">
     <link rel="stylesheet" href="../styles/glass.css">
 </head>
 
@@ -216,23 +216,16 @@
                     Question Bank
                 </a>
 
-                <a class="nav-item" href="/pyqs"
-                        data-page="teacher-pyqs">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-pyq"/></svg>
-                    PYQs
-                </a>
-
-                <a class="nav-item" href="/generate-paper"
-                        data-page="teacher-generate">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
-                    Generate Question Paper
-                </a>
-
-                <a class="nav-item" href="/ai-generate"
-                        data-page="ai-generation">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-ai-generate"/></svg>
-                    Generate Questions with AI
-                </a>
+                <div class="nav-group">
+                    <div class="nav-item nav-group-heading">
+                        <svg class="nav-icon" aria-hidden="true"><use href="#icon-generate"/></svg>
+                        <span class="nav-group-label">Generate Question Paper</span>
+                    </div>
+                    <div class="nav-subnav">
+                        <a class="nav-item nav-subitem" href="/generate-paper" data-page="teacher-generate">With Question Bank</a>
+                        <a class="nav-item nav-subitem" href="/ai-generate" data-page="ai-generation">With Syllabus and AI</a>
+                    </div>
+                </div>
 
                 <a class="nav-item" href="/my-papers"
                         data-page="teacher-papers">
@@ -300,12 +293,6 @@
                         data-page="admin-papers">
                     <svg class="nav-icon" aria-hidden="true"><use href="#icon-papers"/></svg>
                     Question Papers
-                </a>
-
-                <a class="nav-item" href="/ai-generate"
-                        data-page="ai-generation">
-                    <svg class="nav-icon" aria-hidden="true"><use href="#icon-ai-generate"/></svg>
-                    Generate Questions with AI
                 </a>
 
                 <a class="nav-item" href="/profile"
@@ -413,51 +400,6 @@
                         </button>
 
                     </div>
-
-
-                    <div class="stats-grid">
-
-                        <div class="stat-card">
-                            <div class="stat-icon">▣</div>
-
-                            <div>
-                                <span>Total Subjects</span>
-                                <strong id="statSubjects">—</strong>
-                            </div>
-                        </div>
-
-                        <div class="stat-card">
-                            <div class="stat-icon">?</div>
-
-                            <div>
-                                <span>Question Bank</span>
-                                <strong id="statQuestions">—</strong>
-                            </div>
-                        </div>
-
-                        <div class="stat-card">
-                            <div class="stat-icon">◫</div>
-
-                            <div>
-                                <span>PYQs Available</span>
-                                <strong id="statPYQ">—</strong>
-                            </div>
-                        </div>
-
-                        <div class="stat-card">
-                            <div class="stat-icon">▧</div>
-
-                            <div>
-                                <span>Generated Papers</span>
-                                <strong id="statPapers">—</strong>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <p class="demo-note">Dashboard totals are unavailable because the backend does not provide a metrics endpoint.</p>
-
-
                     <div class="section-header">
                         <div>
                             <h2>Quick Actions</h2>
@@ -1893,7 +1835,7 @@
                             <div class="card-header">
                                 <div>
                                     <h3>1. General Information</h3>
-                                    <p>Choose a subject and its uploaded syllabus PDF before selecting topics.</p>
+                                    <p>Choose a subject and syllabus. All syllabus modules will be used for generation.</p>
                                 </div>
                             </div>
 
@@ -1921,27 +1863,7 @@
                                 </div>
 
                                 <div class="form-group form-group-full">
-                                    <label for="aiTopics">Topics by module <span class="required">*</span></label>
-                                    <div id="aiTopicsContainer">
-                                        <p style="padding:8px 0; color:var(--muted);">Select a syllabus to load topics.</p>
-                                    </div>
-                                    <span class="field-error" id="aiTopicsError"></span>
-                                </div>
-
-                                <div class="form-group form-group-full">
-                                    <button
-                                        type="button"
-                                        class="btn btn-secondary small"
-                                        id="aiSelectAllTopics">
-                                        Select All Modules
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-secondary small"
-                                        id="aiSelectNoneTopics">
-                                        Deselect All Modules
-                                    </button>
-                                    <span id="aiTopicsCount" class="distribution-total">0 topics selected</span>
+                                    <p class="form-hint">The entire selected syllabus is used automatically.</p>
                                 </div>
 
                             </div>
@@ -2006,148 +1928,30 @@
                                 Generate Question Paper
                                 </button>
                             </div>
+                            <p id="aiGenerationRequirements" class="form-message" role="status" aria-live="polite"></p>
 
                         </div>
 
                     </form>
 
                     <!-- GENERATION PROGRESS -->
-                    <div
-                        id="aiProgressCard"
-                        class="content-card hidden">
-
-                        <div class="card-header">
-                            <div>
-                                <h3>Generation Progress</h3>
-                                <p>Track the AI question generation job.</p>
-                            </div>
-                        </div>
-
-                        <div id="aiProgressMessage" class="form-message" role="alert"></div>
-
-                        <div class="form-grid">
-                            <div class="form-group form-group-full">
-                                <strong>Job:</strong>
-                                <span id="aiJobSubject"></span>
-                                <span id="aiJobSyllabus"></span>
-                            </div>
-                        </div>
-
-                        <div class="summary-stats">
-                            <div class="stat-card">
-                                <div>Total Requested</div>
-                                <strong id="aiStatTotal">0</strong>
-                            </div>
-                            <div class="stat-card">
-                                <div>Generated</div>
-                                <strong id="aiStatGenerated">0</strong>
-                            </div>
-                            <div class="stat-card">
-                                <div>Processing</div>
-                                <strong id="aiStatProcessing">0</strong>
-                            </div>
-                            <div class="stat-card">
-                                <div>Failed</div>
-                                <strong id="aiStatFailed">0</strong>
-                            </div>
-                            <div class="stat-card">
-                                <div>Retried</div>
-                                <strong id="aiStatRetried">0</strong>
-                            </div>
-                        </div>
-
-                        <div class="job-status">
-                            <span id="aiJobStatusLabel">Status:</span>
-                            <span id="aiJobStatus">—</span>
-                        </div>
-
-                        <div class="section-actions">
-                            <button
-                                type="button"
-                                class="btn btn-secondary small"
-                                id="aiRefreshProgress">
-                                Refresh
-                            </button>
-                            <button
-                                type="button"
-                                class="btn btn-primary small"
-                                id="aiViewQuestions">
-                                View Questions
-                            </button>
-                        </div>
-
+                    <div id="aiProgressCard" class="content-card ai-progress-card hidden" aria-live="polite">
+                        <div class="card-header"><div><h3>Generating your question paper</h3><p id="aiProgressStatus">Submitting your request…</p></div></div>
+                        <div id="aiProgressMessage" class="form-message" role="status"></div>
+                        <div class="ai-progress-track" role="progressbar" aria-label="Question generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="aiProgressBar" class="ai-progress-bar"></div></div>
+                        <div class="ai-progress-numbers"><strong id="aiProgressPercent">0%</strong><span id="aiProgressCompleted">0 of 0 questions completed</span></div>
+                        <p id="aiProgressCounts" class="ai-progress-queue"></p>
+                        <p id="aiProgressRetryStatus" class="ai-progress-queue hidden"></p>
+                        <p id="aiProgressRetryAttempts" class="ai-progress-queue hidden"></p>
+                        <p id="aiProgressFailures" class="ai-progress-failures hidden"></p>
+                        <button type="button" class="btn btn-secondary small hidden" id="aiRetryFailedButton">Retry Failed Questions</button>
                     </div>
 
-                    <!-- GENERATED QUESTION REVIEW -->
-                    <div
-                        id="aiReviewCard"
-                        class="content-card hidden">
-
-                        <div class="card-header">
-                            <div>
-                                <h3>Review Generated Questions</h3>
-                                <p>
-                                    Review, edit and approve questions before
-                                    generating the paper.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div id="aiReviewMessage" class="form-message" role="alert"></div>
-
-                        <div id="aiReviewContainer"></div>
-
-                        <div class="section-actions">
-                            <button
-                                type="button"
-                                class="btn btn-secondary small"
-                                id="aiRefreshQuestions">
-                                Refresh
-                            </button>
-                            <button type="button" class="btn btn-primary small" id="aiApproveSelected" disabled>Approve Selected Drafts</button>
-                            <span id="aiReviewSelection" class="distribution-total">0 questions selected</span>
-                        </div>
-
-                    </div>
-
-                    <!-- DOCX OUTPUT -->
-                    <div
-                        id="aiDocxCard"
-                        class="content-card hidden">
-
-                        <div class="card-header">
-                            <div>
-                                <h3>Generate Question Paper (DOCX)</h3>
-                                <p>Export all approved questions from this generation job to a DOCX question paper.</p>
-                            </div>
-                        </div>
-
-                        <div id="aiDocxMessage" class="form-message" role="alert"></div>
-
-                        <div class="docx-meta">
-                            <strong id="aiDocxPaperTitle">—</strong>
-                            <span id="aiDocxSubject">—</span>
-                            <span id="aiDocxQuestions">0 questions</span>
-                            <span id="aiDocxMarks">0 marks</span>
-                        </div>
-
-                        <div class="section-actions">
-                            <button
-                                type="button"
-                                class="btn btn-primary"
-                                id="aiGenerateDocx">
-                                Generate Question Paper
-                            </button>
-                            <a
-                                id="aiDocxDownload"
-                                class="btn btn-secondary small hidden"
-                                download>
-                                Download DOCX
-                            </a>
-                            <button type="button" id="aiViewMyPapers" class="btn btn-secondary small hidden" data-go="teacher-papers">View in My Papers</button>
-                            <span id="aiDocxStatus" class="distribution-total"></span>
-                        </div>
-
+                    <div id="aiDocxCard" class="content-card ai-docx-card hidden" aria-live="polite">
+                        <p id="aiDocxStatus" class="ai-docx-status" role="status"></p>
+                        <p id="aiDocxMessage" class="form-message form-message-error hidden" role="alert"></p>
+                        <button type="button" class="btn btn-secondary small hidden" id="aiRetryDocx">Retry document generation</button>
+                        <button type="button" class="btn btn-primary btn-large hidden" id="aiDownloadDocx">Download Question Paper (.docx)</button>
                     </div>
 
                 </section>
@@ -2543,7 +2347,7 @@
 
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-<script src="../script.js"></script>
+<script src="../script.js?v=generation-contract-20261114"></script>
 
 </body>
 </html>
